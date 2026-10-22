@@ -34,6 +34,12 @@ from data_rewind.core.integrity.hashing import (
 MAX_SAMPLE_DIFFS = 100
 
 
+def _quote_ident(ident: str) -> str:
+    """Safely quote a SQL identifier, escaping embedded double quotes."""
+    escaped = ident.replace('"', '""')
+    return f'"{escaped}"'
+
+
 class TabularComparator:
     """Forensic comparator for tabular datasets with full 15-case semantics."""
 
@@ -658,12 +664,40 @@ class TabularComparator:
             diff = ValueDiff(column=col_name, baseline_value=val_a, target_value=val_b)
             return False, diff, cases, warnings
 
-        # 5. Direct Equality Fallback
+        # 5. Direct Equality Fallback (guarded against bool vs non-bool coercion)
+        if isinstance(val_a, bool) != isinstance(val_b, bool):
+            diff = ValueDiff(column=col_name, baseline_value=val_a, target_value=val_b)
+            return False, diff, cases, warnings
+
         if val_a == val_b:
             return True, None, cases, warnings
 
         diff = ValueDiff(column=col_name, baseline_value=val_a, target_value=val_b)
         return False, diff, cases, warnings
+
+    @classmethod
+    def _compute_duckdb_multiset_hash(
+        cls,
+        conn: duckdb.DuckDBPyConnection,
+        table_name: str,
+        common_cols: list[str],
+    ) -> str:
+        """Compute additive multiset hash in DuckDB with row multiplicity preservation (P1-01)."""
+        if not common_cols:
+            return "0" * 64
+        json_args = ", ".join(f"'{c}', {_quote_ident(c)}" for c in sorted(common_cols))
+        query = f"""
+        SELECT
+            coalesce(sum(cast(hash(json_object({json_args})) as HUGEINT)), 0) AS h1,
+            coalesce(sum(cast(hash(concat('__dr_salt__', json_object({json_args}))) as HUGEINT)), 0) AS h2,
+            count(*) AS cnt
+        FROM {_quote_ident(table_name)}
+        """
+        row = conn.execute(query).fetchone()
+        assert row is not None
+        h1, h2, cnt = row[0], row[1], row[2]
+        payload = f"{h1}:{h2}:{cnt}".encode()
+        return hashlib.sha256(payload).hexdigest()
 
     @classmethod
     def compare_tables(
@@ -728,8 +762,8 @@ class TabularComparator:
             has_breaking_type_drift=has_breaking,
         )
 
-        cnt_a_raw = conn.execute(f'SELECT count(*) FROM "{table_a}"').fetchone()
-        cnt_b_raw = conn.execute(f'SELECT count(*) FROM "{table_b}"').fetchone()
+        cnt_a_raw = conn.execute(f"SELECT count(*) FROM {_quote_ident(table_a)}").fetchone()
+        cnt_b_raw = conn.execute(f"SELECT count(*) FROM {_quote_ident(table_b)}").fetchone()
         assert cnt_a_raw is not None and cnt_b_raw is not None
         cnt_a = int(cnt_a_raw[0])
         cnt_b = int(cnt_b_raw[0])
@@ -740,28 +774,16 @@ class TabularComparator:
         schema_hash = hashlib.sha256(schema_descriptor.encode()).hexdigest()
 
         if cnt_a <= 5000 and cnt_b <= 5000:
-            cur_a = conn.execute(
-                f'SELECT {", ".join(f"{c}" for c in common_cols)} FROM "{table_a}"'
-            ).fetchall()
-            cur_b = conn.execute(
-                f'SELECT {", ".join(f"{c}" for c in common_cols)} FROM "{table_b}"'
-            ).fetchall()
+            quoted_cols = ", ".join(_quote_ident(c) for c in common_cols)
+            cur_a = conn.execute(f"SELECT {quoted_cols} FROM {_quote_ident(table_a)}").fetchall()
+            cur_b = conn.execute(f"SELECT {quoted_cols} FROM {_quote_ident(table_b)}").fetchall()
             rows_a = [dict(zip(common_cols, r, strict=False)) for r in cur_a]
             rows_b = [dict(zip(common_cols, r, strict=False)) for r in cur_b]
             fp_baseline = cls.compute_fingerprint(rows_a, common_cols)
             fp_target = cls.compute_fingerprint(rows_b, common_cols)
         else:
-            col_list_str = ", ".join(f'"{c}"' for c in common_cols)
-            raw_a = conn.execute(
-                f"SELECT bit_xor(cast(hash(concat_ws('||', {col_list_str})) as HUGEINT)) FROM \"{table_a}\""
-            ).fetchone()
-            raw_b = conn.execute(
-                f"SELECT bit_xor(cast(hash(concat_ws('||', {col_list_str})) as HUGEINT)) FROM \"{table_b}\""
-            ).fetchone()
-            val_a = raw_a[0] if raw_a else 0
-            val_b = raw_b[0] if raw_b else 0
-            mhash_a = hashlib.sha256(str(val_a).encode()).hexdigest()
-            mhash_b = hashlib.sha256(str(val_b).encode()).hexdigest()
+            mhash_a = cls._compute_duckdb_multiset_hash(conn, table_a, common_cols)
+            mhash_b = cls._compute_duckdb_multiset_hash(conn, table_b, common_cols)
             fp_baseline = DatasetFingerprint(
                 schema_hash=schema_hash,
                 multiset_hash=mhash_a,
@@ -792,9 +814,13 @@ class TabularComparator:
                 )
 
             # Null key check (Case 3)
-            null_cond = " OR ".join(f'"{k}" IS NULL' for k in pk)
-            res_na = conn.execute(f'SELECT count(*) FROM "{table_a}" WHERE {null_cond}').fetchone()
-            res_nb = conn.execute(f'SELECT count(*) FROM "{table_b}" WHERE {null_cond}').fetchone()
+            null_cond = " OR ".join(f"{_quote_ident(k)} IS NULL" for k in pk)
+            res_na = conn.execute(
+                f"SELECT count(*) FROM {_quote_ident(table_a)} WHERE {null_cond}"
+            ).fetchone()
+            res_nb = conn.execute(
+                f"SELECT count(*) FROM {_quote_ident(table_b)} WHERE {null_cond}"
+            ).fetchone()
             null_a_cnt = int(res_na[0]) if res_na else 0
             null_b_cnt = int(res_nb[0]) if res_nb else 0
             if null_a_cnt > 0 or null_b_cnt > 0:
@@ -804,13 +830,13 @@ class TabularComparator:
                 )
 
             # Duplicate key check (Case 4)
-            pk_cols_sql = ", ".join(f'"{k}"' for k in pk)
-            pk_not_null = " AND ".join(f'"{k}" IS NOT NULL' for k in pk)
+            pk_cols_sql = ", ".join(_quote_ident(k) for k in pk)
+            pk_not_null = " AND ".join(f"{_quote_ident(k)} IS NOT NULL" for k in pk)
             dup_a_rows = conn.execute(
-                f'SELECT {pk_cols_sql} FROM "{table_a}" WHERE {pk_not_null} GROUP BY {pk_cols_sql} HAVING count(*) > 1 LIMIT 50'
+                f"SELECT {pk_cols_sql} FROM {_quote_ident(table_a)} WHERE {pk_not_null} GROUP BY {pk_cols_sql} HAVING count(*) > 1 LIMIT 50"
             ).fetchall()
             dup_b_rows = conn.execute(
-                f'SELECT {pk_cols_sql} FROM "{table_b}" WHERE {pk_not_null} GROUP BY {pk_cols_sql} HAVING count(*) > 1 LIMIT 50'
+                f"SELECT {pk_cols_sql} FROM {_quote_ident(table_b)} WHERE {pk_not_null} GROUP BY {pk_cols_sql} HAVING count(*) > 1 LIMIT 50"
             ).fetchall()
 
             if dup_a_rows or dup_b_rows:
@@ -833,46 +859,45 @@ class TabularComparator:
 
             for c in non_key_cols:
                 col_type = types_a.get(c, "")
+                qc = _quote_ident(c)
                 if any(flt in col_type for flt in ("FLOAT", "DOUBLE", "DECIMAL", "REAL")):
                     cases.append(CaseClassification.CASE_11_FLOAT_TOLERANCE)
                     col_match_clauses.append(
-                        f'((a."{c}" IS NOT DISTINCT FROM b."{c}") OR '
-                        f'(abs(a."{c}" - b."{c}") <= ({cfg.atol} + {cfg.rtol} * abs(b."{c}"))))'
+                        f"((a.{qc} IS NOT DISTINCT FROM b.{qc}) OR "
+                        f"(a.{qc} IS NOT NULL AND b.{qc} IS NOT NULL AND abs(a.{qc} - b.{qc}) <= ({cfg.atol} + {cfg.rtol} * abs(b.{qc}))))"
                     )
                 elif any(txt in col_type for txt in ("VARCHAR", "TEXT", "CHAR")):
                     cases.append(CaseClassification.CASE_14_STRING_NORMALIZATION)
                     if cfg.ignore_whitespace and not cfg.case_sensitive:
                         col_match_clauses.append(
-                            f'lower(trim(a."{c}")) IS NOT DISTINCT FROM lower(trim(b."{c}"))'
+                            f"lower(trim(a.{qc})) IS NOT DISTINCT FROM lower(trim(b.{qc}))"
                         )
                     elif cfg.ignore_whitespace:
-                        col_match_clauses.append(
-                            f'trim(a."{c}") IS NOT DISTINCT FROM trim(b."{c}")'
-                        )
+                        col_match_clauses.append(f"trim(a.{qc}) IS NOT DISTINCT FROM trim(b.{qc})")
                     elif not cfg.case_sensitive:
                         col_match_clauses.append(
-                            f'lower(a."{c}") IS NOT DISTINCT FROM lower(b."{c}")'
+                            f"lower(a.{qc}) IS NOT DISTINCT FROM lower(b.{qc})"
                         )
                     else:
-                        col_match_clauses.append(f'a."{c}" IS NOT DISTINCT FROM b."{c}"')
+                        col_match_clauses.append(f"a.{qc} IS NOT DISTINCT FROM b.{qc}")
                 elif any(it in col_type for it in ("INT", "BIGINT", "SMALLINT", "TINYINT")):
                     cases.append(CaseClassification.CASE_12_DECIMAL_INTEGER_ARITHMETIC)
-                    col_match_clauses.append(f'a."{c}" IS NOT DISTINCT FROM b."{c}"')
+                    col_match_clauses.append(f"a.{qc} IS NOT DISTINCT FROM b.{qc}")
                 else:
-                    col_match_clauses.append(f'a."{c}" IS NOT DISTINCT FROM b."{c}"')
+                    col_match_clauses.append(f"a.{qc} IS NOT DISTINCT FROM b.{qc}")
 
             val_equality_sql = " AND ".join(col_match_clauses) if col_match_clauses else "TRUE"
-            join_sql = " AND ".join(f'a."{k}" = b."{k}"' for k in pk)
-            pk_not_null = " AND ".join(f'"{k}" IS NOT NULL' for k in pk)
+            join_sql = " AND ".join(f"a.{_quote_ident(k)} = b.{_quote_ident(k)}" for k in pk)
+            pk_not_null = " AND ".join(f"{_quote_ident(k)} IS NOT NULL" for k in pk)
 
             diff_query = f"""
             SELECT
                 count(*) FILTER (WHERE a_pk IS NULL) AS added_valid,
                 count(*) FILTER (WHERE b_pk IS NULL) AS removed_valid,
-                count(*) FILTER (WHERE a_pk IS NOT NULL AND b_pk IS NOT NULL AND NOT ({val_equality_sql})) AS modified_count,
-                count(*) FILTER (WHERE a_pk IS NOT NULL AND b_pk IS NOT NULL AND ({val_equality_sql})) AS identical_count
-            FROM (SELECT *, "{pk[0]}" AS a_pk FROM "{table_a}" WHERE {pk_not_null}) a
-            FULL OUTER JOIN (SELECT *, "{pk[0]}" AS b_pk FROM "{table_b}" WHERE {pk_not_null}) b
+                count(*) FILTER (WHERE a_pk IS NOT NULL AND b_pk IS NOT NULL AND NOT coalesce({val_equality_sql}, FALSE)) AS modified_count,
+                count(*) FILTER (WHERE a_pk IS NOT NULL AND b_pk IS NOT NULL AND coalesce({val_equality_sql}, FALSE)) AS identical_count
+            FROM (SELECT *, {_quote_ident(pk[0])} AS a_pk FROM {_quote_ident(table_a)} WHERE {pk_not_null}) a
+            FULL OUTER JOIN (SELECT *, {_quote_ident(pk[0])} AS b_pk FROM {_quote_ident(table_b)} WHERE {pk_not_null}) b
             ON {join_sql}
             """
             counts = conn.execute(diff_query).fetchone()
@@ -882,14 +907,102 @@ class TabularComparator:
             modified_count = int(counts[2])
             identical_count = int(counts[3])
 
-            null_cond = " OR ".join(f'"{k}" IS NULL' for k in pk)
-            res_na = conn.execute(f'SELECT count(*) FROM "{table_a}" WHERE {null_cond}').fetchone()
-            res_nb = conn.execute(f'SELECT count(*) FROM "{table_b}" WHERE {null_cond}').fetchone()
+            null_cond = " OR ".join(f"{_quote_ident(k)} IS NULL" for k in pk)
+            res_na = conn.execute(
+                f"SELECT count(*) FROM {_quote_ident(table_a)} WHERE {null_cond}"
+            ).fetchone()
+            res_nb = conn.execute(
+                f"SELECT count(*) FROM {_quote_ident(table_b)} WHERE {null_cond}"
+            ).fetchone()
             null_a_cnt = int(res_na[0]) if res_na else 0
             null_b_cnt = int(res_nb[0]) if res_nb else 0
 
             added_count = added_valid + null_b_cnt
             removed_count = removed_valid + null_a_cnt
+
+            # Sample row diffs for forensic inspection and diagnostic rules (DR-05)
+            sample_diffs: list[RowDiff] = []
+            if modified_count > 0:
+                cols_select_a = ", ".join(
+                    f"a.{_quote_ident(c)} AS {_quote_ident(f'__a_{c}')}" for c in common_cols
+                )
+                cols_select_b = ", ".join(
+                    f"b.{_quote_ident(c)} AS {_quote_ident(f'__b_{c}')}" for c in common_cols
+                )
+                sample_mod_query = f"""
+                SELECT {cols_select_a}, {cols_select_b}
+                FROM (SELECT * FROM {_quote_ident(table_a)} WHERE {pk_not_null}) a
+                JOIN (SELECT * FROM {_quote_ident(table_b)} WHERE {pk_not_null}) b
+                ON {join_sql}
+                WHERE NOT coalesce({val_equality_sql}, FALSE)
+                LIMIT {MAX_SAMPLE_DIFFS}
+                """
+                mod_rows = conn.execute(sample_mod_query).fetchall()
+                for r in mod_rows:
+                    row_a = {c: r[i] for i, c in enumerate(common_cols)}
+                    row_b = {c: r[i + len(common_cols)] for i, c in enumerate(common_cols)}
+                    field_diffs: list[ValueDiff] = []
+                    for c in common_cols:
+                        is_match, diff_item, _, _ = cls.compare_values(
+                            row_a.get(c), row_b.get(c), c, cfg
+                        )
+                        if not is_match and diff_item is not None:
+                            field_diffs.append(diff_item)
+
+                    key_dict = {k: row_a[k] for k in pk}
+                    sample_diffs.append(
+                        RowDiff(
+                            category=DiffCategory.MODIFIED,
+                            key_values=key_dict,
+                            baseline_row=row_a,
+                            target_row=row_b,
+                            field_diffs=field_diffs,
+                        )
+                    )
+
+            if len(sample_diffs) < MAX_SAMPLE_DIFFS and removed_valid > 0:
+                quota = min(25, MAX_SAMPLE_DIFFS - len(sample_diffs))
+                cols_select_a_simple = ", ".join(f"a.{_quote_ident(c)}" for c in common_cols)
+                sample_rem_query = f"""
+                SELECT {cols_select_a_simple}
+                FROM (SELECT * FROM {_quote_ident(table_a)} WHERE {pk_not_null}) a
+                LEFT JOIN (SELECT * FROM {_quote_ident(table_b)} WHERE {pk_not_null}) b
+                ON {join_sql}
+                WHERE b.{_quote_ident(pk[0])} IS NULL
+                LIMIT {quota}
+                """
+                for r in conn.execute(sample_rem_query).fetchall():
+                    row_a = dict(zip(common_cols, r, strict=False))
+                    key_dict = {k: row_a[k] for k in pk}
+                    sample_diffs.append(
+                        RowDiff(
+                            category=DiffCategory.REMOVED,
+                            key_values=key_dict,
+                            baseline_row=row_a,
+                        )
+                    )
+
+            if len(sample_diffs) < MAX_SAMPLE_DIFFS and added_valid > 0:
+                quota = min(25, MAX_SAMPLE_DIFFS - len(sample_diffs))
+                cols_select_b_simple = ", ".join(f"b.{_quote_ident(c)}" for c in common_cols)
+                sample_add_query = f"""
+                SELECT {cols_select_b_simple}
+                FROM (SELECT * FROM {_quote_ident(table_b)} WHERE {pk_not_null}) b
+                LEFT JOIN (SELECT * FROM {_quote_ident(table_a)} WHERE {pk_not_null}) a
+                ON {join_sql}
+                WHERE a.{_quote_ident(pk[0])} IS NULL
+                LIMIT {quota}
+                """
+                for r in conn.execute(sample_add_query).fetchall():
+                    row_b = dict(zip(common_cols, r, strict=False))
+                    key_dict = {k: row_b[k] for k in pk}
+                    sample_diffs.append(
+                        RowDiff(
+                            category=DiffCategory.ADDED,
+                            key_values=key_dict,
+                            target_row=row_b,
+                        )
+                    )
 
             is_equal = (
                 modified_count == 0
@@ -910,24 +1023,22 @@ class TabularComparator:
                 removed_count=removed_count,
                 baseline_row_count=cnt_a,
                 target_row_count=cnt_b,
-                sample_row_diffs=[],
+                sample_row_diffs=sample_diffs,
                 warnings=sorted(set(warnings)),
                 duplicate_keys_detected=[],
             )
         else:
             # Keyless Multiset comparison (Cases 5, 6, 7)
             cases.append(CaseClassification.CASE_5_KEYLESS_MULTISET)
-            col_list_sql = ", ".join(
-                f"coalesce(cast(\"{c}\" as varchar), '__NULL__')" for c in common_cols
-            )
-            hash_expr = f"md5(concat_ws('||', {col_list_sql}))"
+            json_args = ", ".join(f"'{c}', {_quote_ident(c)}" for c in sorted(common_cols))
+            hash_expr = f"md5(json_object({json_args}))"
 
             keyless_query = f"""
             WITH freq_a AS (
-                SELECT {hash_expr} AS h, count(*) AS cnt FROM "{table_a}" GROUP BY h
+                SELECT {hash_expr} AS h, count(*) AS cnt FROM {_quote_ident(table_a)} GROUP BY h
             ),
             freq_b AS (
-                SELECT {hash_expr} AS h, count(*) AS cnt FROM "{table_b}" GROUP BY h
+                SELECT {hash_expr} AS h, count(*) AS cnt FROM {_quote_ident(table_b)} GROUP BY h
             )
             SELECT
                 coalesce(sum(least(coalesce(a.cnt, 0), coalesce(b.cnt, 0))), 0) AS identical_count,
@@ -946,10 +1057,10 @@ class TabularComparator:
 
             # Check duplicate identical records (Case 7)
             res_da = conn.execute(
-                f'SELECT count(*) FROM (SELECT {hash_expr} AS h, count(*) AS cnt FROM "{table_a}" GROUP BY h HAVING cnt > 1)'
+                f"SELECT count(*) FROM (SELECT {hash_expr} AS h, count(*) AS cnt FROM {_quote_ident(table_a)} GROUP BY h HAVING cnt > 1)"
             ).fetchone()
             res_db = conn.execute(
-                f'SELECT count(*) FROM (SELECT {hash_expr} AS h, count(*) AS cnt FROM "{table_b}" GROUP BY h HAVING cnt > 1)'
+                f"SELECT count(*) FROM (SELECT {hash_expr} AS h, count(*) AS cnt FROM {_quote_ident(table_b)} GROUP BY h HAVING cnt > 1)"
             ).fetchone()
             dups_in_a = int(res_da[0]) if res_da else 0
             dups_in_b = int(res_db[0]) if res_db else 0
@@ -967,6 +1078,51 @@ class TabularComparator:
                 warnings.append(
                     "IDENTICAL_MULTISET_REORDERED: Datasets contain identical records in different sequence."
                 )
+
+            # Sample row diffs for keyless added/removed rows
+            sample_diffs = []
+            if removed_count > 0 and len(sample_diffs) < MAX_SAMPLE_DIFFS:
+                quota = min(25, MAX_SAMPLE_DIFFS - len(sample_diffs))
+                rem_query = f"""
+                WITH freq_a AS (SELECT {hash_expr} AS h, count(*) AS cnt FROM {_quote_ident(table_a)} GROUP BY h),
+                     freq_b AS (SELECT {hash_expr} AS h, count(*) AS cnt FROM {_quote_ident(table_b)} GROUP BY h)
+                SELECT {", ".join(f"t.{_quote_ident(c)}" for c in common_cols)}, fa.h
+                FROM {_quote_ident(table_a)} t
+                JOIN freq_a fa ON {hash_expr} = fa.h
+                LEFT JOIN freq_b fb ON fa.h = fb.h
+                WHERE coalesce(fb.cnt, 0) < fa.cnt
+                LIMIT {quota}
+                """
+                for r in conn.execute(rem_query).fetchall():
+                    row_dict = dict(zip(common_cols, r[: len(common_cols)], strict=False))
+                    sample_diffs.append(
+                        RowDiff(
+                            category=DiffCategory.REMOVED,
+                            baseline_row=row_dict,
+                            row_hash_baseline=str(r[-1]),
+                        )
+                    )
+            if added_count > 0 and len(sample_diffs) < MAX_SAMPLE_DIFFS:
+                quota = min(25, MAX_SAMPLE_DIFFS - len(sample_diffs))
+                add_query = f"""
+                WITH freq_a AS (SELECT {hash_expr} AS h, count(*) AS cnt FROM {_quote_ident(table_a)} GROUP BY h),
+                     freq_b AS (SELECT {hash_expr} AS h, count(*) AS cnt FROM {_quote_ident(table_b)} GROUP BY h)
+                SELECT {", ".join(f"t.{_quote_ident(c)}" for c in common_cols)}, fb.h
+                FROM {_quote_ident(table_b)} t
+                JOIN freq_b fb ON {hash_expr} = fb.h
+                LEFT JOIN freq_a fa ON fb.h = fa.h
+                WHERE coalesce(fa.cnt, 0) < fb.cnt
+                LIMIT {quota}
+                """
+                for r in conn.execute(add_query).fetchall():
+                    row_dict = dict(zip(common_cols, r[: len(common_cols)], strict=False))
+                    sample_diffs.append(
+                        RowDiff(
+                            category=DiffCategory.ADDED,
+                            target_row=row_dict,
+                            row_hash_target=str(r[-1]),
+                        )
+                    )
 
             is_equal = (
                 added_count == 0
@@ -987,7 +1143,7 @@ class TabularComparator:
                 removed_count=removed_count,
                 baseline_row_count=cnt_a,
                 target_row_count=cnt_b,
-                sample_row_diffs=[],
+                sample_row_diffs=sample_diffs,
                 warnings=sorted(set(warnings)),
                 duplicate_keys_detected=dup_keys,
             )

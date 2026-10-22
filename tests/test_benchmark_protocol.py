@@ -116,10 +116,12 @@ def test_execute_scenario_keyed() -> None:
 def test_build_standard_suite_configs() -> None:
     quick_configs = build_standard_suite_configs(quick=True)
     assert len(quick_configs) == 5
+    assert quick_configs[0].iterations == 3
     assert not any(c.row_count == 500_000 for c in quick_configs)
 
     full_configs = build_standard_suite_configs(quick=False)
     assert len(full_configs) == 6
+    assert full_configs[0].iterations == 10
     assert any(c.row_count == 500_000 for c in full_configs)
 
 

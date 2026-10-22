@@ -29,7 +29,18 @@ class EODDetector:
         has_unmaterialized_intermediates: bool = False,
     ) -> EODResult:
         """Identify the Earliest Observable Divergence node(s) and diagnose root causes."""
-        dependencies = step_dependencies or {}
+        if step_dependencies is not None:
+            dependencies = step_dependencies
+        else:
+            # P2-03: When dependencies are omitted, infer linear sequence from topological_order
+            dependencies = (
+                {
+                    topological_order[i]: [topological_order[i - 1]]
+                    for i in range(1, len(topological_order))
+                }
+                if len(topological_order) > 1
+                else {}
+            )
         findings: list[DiagnosticFinding] = []
 
         # 1. Edge Case: Missing Intermediate Checkpoints (SPEC-MOD-04 2.1.1)

@@ -20,7 +20,8 @@ from data_rewind.benchmarks.protocol import execute_scenario, get_system_environ
 
 def build_standard_suite_configs(quick: bool = False) -> list[BenchmarkScenarioConfig]:
     """Construct benchmark scenario configurations conforming to SPEC-MOD-09 matrix."""
-    iterations = 3 if quick else 5
+    # SPEC-MOD-09 Section 2.3 mandates minimum 10 iterations for standard statistical suite
+    iterations = 3 if quick else 10
 
     configs: list[BenchmarkScenarioConfig] = [
         # 1. Scalability progression (Keyed PK, 10 cols, 1% drift)

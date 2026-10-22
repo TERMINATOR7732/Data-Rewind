@@ -436,3 +436,158 @@ def test_comparator_serialization_roundtrip() -> None:
     assert restored.removed_count == res.removed_count
     assert restored.baseline_fingerprint == res.baseline_fingerprint
     assert restored.case_classifications == res.case_classifications
+
+
+# ---------------------------------------------------------------------------
+# Milestone 2.0.2 Regression Tests (P1-01, P2-01, P2-02, P3-02, P3-03)
+# ---------------------------------------------------------------------------
+def test_p1_01_multiset_hash_duplicate_preservation() -> None:
+    """Verify additive multiset hashing in DuckDB preserves row multiplicity."""
+    conn = duckdb.connect(":memory:")
+    conn.execute("CREATE TABLE d_empty (id INT, val VARCHAR)")
+    conn.execute("CREATE TABLE d_2dup (id INT, val VARCHAR)")
+    conn.execute("CREATE TABLE d_4dup (id INT, val VARCHAR)")
+
+    # Insert duplicate pairs
+    conn.execute("INSERT INTO d_2dup VALUES (1, 'hello'), (1, 'hello')")
+    conn.execute("INSERT INTO d_4dup VALUES (1, 'hello'), (1, 'hello'), (1, 'hello'), (1, 'hello')")
+
+    cols = ["id", "val"]
+    h_empty = TabularComparator._compute_duckdb_multiset_hash(conn, "d_empty", cols)
+    h_2dup = TabularComparator._compute_duckdb_multiset_hash(conn, "d_2dup", cols)
+    h_4dup = TabularComparator._compute_duckdb_multiset_hash(conn, "d_4dup", cols)
+
+    # Invariant: duplicate pair does not cancel to zero (XOR defect P1-01)
+    assert h_2dup != h_empty
+    # Invariant: 2 duplicates != 4 duplicates
+    assert h_2dup != h_4dup
+    assert len(h_2dup) == 64
+
+
+def test_p1_01_multiset_hash_large_table_even_multiplicity() -> None:
+    """Verify tables > 5000 rows with even duplicate multiplicities do not cancel to zero."""
+    conn = duckdb.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE big_a AS SELECT i % 500 AS id, 'val_' || (i % 500) AS s FROM range(6000) t(i)"
+    )
+    conn.execute("CREATE TABLE big_empty (id BIGINT, s VARCHAR)")
+
+    cfg = ComparisonConfig(primary_key=None)
+    res = TabularComparator.compare_tables(conn, "big_a", "big_empty", cfg)
+
+    assert res.baseline_row_count == 6000
+    assert res.target_row_count == 0
+    assert not res.is_equal
+    assert res.baseline_fingerprint.multiset_hash != res.target_fingerprint.multiset_hash
+    assert res.baseline_fingerprint.multiset_hash != "0" * 64
+
+
+def test_p2_01_keyless_null_vs_literal_sentinel_collision() -> None:
+    """Verify keyless comparison distinguishes SQL NULL from literal string '__NULL__'."""
+    conn = duckdb.connect(":memory:")
+    conn.execute("CREATE TABLE t_null (s VARCHAR)")
+    conn.execute("CREATE TABLE t_sentinel (s VARCHAR)")
+    conn.execute("INSERT INTO t_null VALUES (NULL)")
+    conn.execute("INSERT INTO t_sentinel VALUES ('__NULL__')")
+
+    res = TabularComparator.compare_tables(
+        conn, "t_null", "t_sentinel", ComparisonConfig(primary_key=None)
+    )
+
+    # Must NOT collide into identical_count == 1
+    assert res.identical_count == 0
+    assert res.added_count == 1
+    assert res.removed_count == 1
+    assert not res.is_equal
+    assert res.verify_partition_invariants()
+
+
+def test_p2_01_keyless_delimiter_collision() -> None:
+    """Verify keyless comparison prevents cross-column delimiter collisions ('||')."""
+    conn = duckdb.connect(":memory:")
+    conn.execute("CREATE TABLE td1 (a VARCHAR, b VARCHAR)")
+    conn.execute("CREATE TABLE td2 (a VARCHAR, b VARCHAR)")
+    conn.execute("INSERT INTO td1 VALUES ('x||y', 'z')")
+    conn.execute("INSERT INTO td2 VALUES ('x', 'y||z')")
+
+    res = TabularComparator.compare_tables(conn, "td1", "td2", ComparisonConfig(primary_key=None))
+
+    assert res.identical_count == 0
+    assert res.added_count == 1
+    assert res.removed_count == 1
+    assert not res.is_equal
+    assert res.verify_partition_invariants()
+
+
+def test_p2_02_compare_tables_populates_sample_diffs() -> None:
+    """Verify compare_tables populates sample_row_diffs with field-level ValueDiff details."""
+    conn = duckdb.connect(":memory:")
+    conn.execute("CREATE TABLE t1 (id BIGINT, score DOUBLE, note VARCHAR)")
+    conn.execute("CREATE TABLE t2 (id BIGINT, score DOUBLE, note VARCHAR)")
+
+    # 1 identical, 1 modified (with null transition), 1 removed, 1 added
+    conn.execute(
+        "INSERT INTO t1 VALUES (1, 10.0, 'clean'), (2, 20.0, 'has_note'), (3, 30.0, 'rem')"
+    )
+    conn.execute(
+        "INSERT INTO t2 VALUES (1, 10.0, 'clean'), (2, NULL, 'has_note'), (4, 40.0, 'add')"
+    )
+
+    res = TabularComparator.compare_tables(conn, "t1", "t2", ComparisonConfig(primary_key=["id"]))
+
+    assert res.identical_count == 1
+    assert res.modified_count == 1
+    assert res.removed_count == 1
+    assert res.added_count == 1
+    assert len(res.sample_row_diffs) >= 1
+
+    # Find the modified sample
+    mod_sample = next(
+        (s for s in res.sample_row_diffs if s.category == DiffCategory.MODIFIED), None
+    )
+    assert mod_sample is not None
+    assert mod_sample.key_values == {"id": 2}
+    assert len(mod_sample.field_diffs) == 1
+    fd = mod_sample.field_diffs[0]
+    assert fd.column == "score"
+    assert fd.baseline_value == 20.0
+    assert fd.target_value is None
+    assert fd.is_null_transition is True
+
+
+def test_p3_02_quote_ident_special_characters() -> None:
+    """Verify identifiers with quotes and spaces are quoted without SQL syntax errors."""
+    from data_rewind.comparator.engine import _quote_ident
+
+    assert _quote_ident("simple") == '"simple"'
+    assert _quote_ident('col"name') == '"col""name"'
+    assert _quote_ident('weird"table"name') == '"weird""table""name"'
+
+    # Verify execution in DuckDB with quoted column name
+    conn = duckdb.connect(":memory:")
+    col_name = 'user"id'
+    qc = _quote_ident(col_name)
+    conn.execute(f"CREATE TABLE test_quote ({qc} INT); INSERT INTO test_quote VALUES (42)")
+    val = conn.execute(f"SELECT {qc} FROM test_quote").fetchone()[0]
+    assert val == 42
+
+
+def test_p3_03_bool_vs_numeric_equality_isolation() -> None:
+    """Verify Python True == 1 / False == 0 does not falsely match across types."""
+    cfg = ComparisonConfig()
+    is_match_1, diff_1, _, _ = TabularComparator.compare_values(True, 1, "col_bool", cfg)
+    assert not is_match_1
+    assert diff_1 is not None
+    assert diff_1.baseline_value is True
+    assert diff_1.target_value == 1
+
+    is_match_0, diff_0, _, _ = TabularComparator.compare_values(False, 0, "col_bool", cfg)
+    assert not is_match_0
+    assert diff_0 is not None
+
+    # Matching booleans succeed
+    is_match_tt, _, _, _ = TabularComparator.compare_values(True, True, "col_bool", cfg)
+    assert is_match_tt
+
+    is_match_ff, _, _, _ = TabularComparator.compare_values(False, False, "col_bool", cfg)
+    assert is_match_ff
