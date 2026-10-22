@@ -138,6 +138,7 @@ class DAGValidator:
                 OperationType.AGGREGATE_GROUP_BY,
                 OperationType.DEDUPLICATE_ROWS,
                 OperationType.CAST_COLUMNS,
+                OperationType.SORT_ROWS,
             )
             and input_count != 1
         ):

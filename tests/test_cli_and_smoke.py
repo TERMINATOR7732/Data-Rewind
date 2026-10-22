@@ -49,3 +49,35 @@ def test_cli_main_entrypoint(
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
+
+    # Test investigate dispatch
+    monkeypatch.setattr(sys, "argv", ["data-rewind", "investigate", "--scenario", "scn01"])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+
+    # Test investigate json dispatch
+    monkeypatch.setattr(
+        sys, "argv", ["data-rewind", "investigate", "--scenario", "scn01", "--format", "json"]
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+
+    # Test lineage dispatch
+    monkeypatch.setattr(sys, "argv", ["data-rewind", "lineage", "--scenario", "scn01"])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+
+    # Test replay dispatch
+    monkeypatch.setattr(sys, "argv", ["data-rewind", "replay", "--scenario", "scn01"])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+
+    # Test manifest dispatch
+    monkeypatch.setattr(sys, "argv", ["data-rewind", "manifest", "--scenario", "scn01"])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0

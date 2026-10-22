@@ -80,6 +80,7 @@ class ManifestStepSnapshot(BaseModel):
     step_id: str
     operation: str
     parameters: dict[str, Any] = Field(default_factory=dict)
+    input_step_ids: list[str] = Field(default_factory=list)
 
 
 class ReplayManifest(BaseModel):

@@ -52,6 +52,7 @@ class OperationType(str, Enum):
     DERIVE_COLUMN = "derive_column"
     DEDUPLICATE_ROWS = "deduplicate_rows"
     CAST_COLUMNS = "cast_columns"
+    SORT_ROWS = "sort_rows"
 
 
 class RunType(str, Enum):
