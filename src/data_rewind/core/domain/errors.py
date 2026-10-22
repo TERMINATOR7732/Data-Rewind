@@ -182,3 +182,30 @@ class ProcessMemoryExceededError(ResourceLimitExceededError):
     """Raised when backend process RSS reaches ceiling (512 MiB)."""
 
     default_code = "OUT_OF_MEMORY_SAFEGUARD"
+
+
+# --- Comparison and Diagnostic Errors ---
+
+
+class ComparisonError(DataRewindError):
+    """Base exception for tabular diff and snapshot comparison failures."""
+
+    default_code = "COMPARISON_ERROR"
+
+
+class DuplicateKeyViolationError(ComparisonError):
+    """Raised when designated primary or composite key contains duplicate values."""
+
+    default_code = "DUPLICATE_KEY_VIOLATION"
+
+
+class InvalidKeyError(ComparisonError):
+    """Raised when designated primary or composite key contains null or missing values."""
+
+    default_code = "INVALID_KEY_ERROR"
+
+
+class DiagnosticEngineError(DataRewindError):
+    """Raised when diagnostic rule engine or EOD detector encounters internal fault."""
+
+    default_code = "DIAGNOSTIC_ENGINE_ERROR"

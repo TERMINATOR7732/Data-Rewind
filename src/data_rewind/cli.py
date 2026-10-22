@@ -72,12 +72,38 @@ def main() -> None:
     subparsers.add_parser("diagnostics", help="Display local diagnostic and environment info")
     subparsers.add_parser("smoke-test", help="Execute core engine foundations smoke test")
 
+    bench_parser = subparsers.add_parser(
+        "benchmark", help="Execute reproducible benchmark protocol"
+    )
+    bench_parser.add_argument(
+        "--quick",
+        action="store_true",
+        help="Run fast CI/smoke benchmark suite without 500k-row target verification",
+    )
+    bench_parser.add_argument(
+        "--output",
+        "-o",
+        type=str,
+        default=None,
+        help="Path to write JSON benchmark dossier",
+    )
+
     args = parser.parse_args()
 
     if args.command == "smoke-test":
         from data_rewind.smoke_test import run_smoke_test
 
         sys.exit(run_smoke_test())
+    elif args.command == "benchmark":
+        from pathlib import Path
+
+        from data_rewind.benchmarks import format_report_table, run_benchmarks
+
+        out_path = Path(args.output) if args.output else None
+        print("Executing Data Rewind Reproducible Benchmark Protocol...")
+        report = run_benchmarks(quick=args.quick, output_path=out_path)
+        print("\n" + format_report_table(report))
+        sys.exit(0 if report.all_targets_met else 1)
     elif args.command == "diagnostics" or not args.command:
         sys.exit(print_diagnostics())
 

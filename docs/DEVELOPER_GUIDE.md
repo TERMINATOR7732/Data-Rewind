@@ -261,26 +261,54 @@ Conforms to `SPEC-MOD-09` 8-Column Matrix.
 
 ---
 
-## 9. Explicit Non-Goals for Milestone 1.0
+## 9. Milestone 2.0 Engine Architecture (Comparator, Diagnostics & Benchmarks)
 
-The following capabilities are governed by subsequent roadmap milestones and are intentionally **not** implemented in Milestone 1.0:
-- Full CSV upload REST API endpoints (Milestone 5.0).
-- Excel (`.xlsx`) ingestion (Deferred to Milestone 2.0).
-- The complete 15-case tabular comparator (Milestone 2.0).
-- Earliest Observable Divergence (EOD) detector & 6 diagnostic rules (Milestone 2.0).
+### 9.1 Forensic Tabular Comparator (`data_rewind.comparator`)
+The forensic comparator implements all 15 operational comparison cases specified in Section 1 of `SPEC-MOD-04`:
+- **Case 1 & 2:** Keyed comparison with unique primary key or composite keys via relational outer joins.
+- **Case 3 & 4:** Null key isolation into `INVALID_KEY_ROWS` and duplicate key detection with automatic fallback to Keyless Multiset comparison.
+- **Case 5, 6, 7:** Keyless multiset (bag) comparison comparing hash frequency distributions $\min(f_A, f_B)$, reordered row classification (`IDENTICAL_MULTISET_REORDERED`), and multiplicity preservation.
+- **Case 8:** Partition completeness invariant enforced on every comparison:
+  $$|\mathcal{I}| + |\mathcal{M}| + |\mathcal{R}| == |D_A| \quad \land \quad |\mathcal{I}| + |\mathcal{M}| + |\mathcal{A}| == |D_B|$$
+- **Case 9 & 10:** Column additions, removals (`ADDED_COLUMNS`, `REMOVED_COLUMNS`), and type coercion with breaking type drift detection.
+- **Case 11 & 12:** Floating-point tolerance ($|a - b| \le \text{atol} + \text{rtol} \times |b|$) with configurable defaults ($10^{-6}, 10^{-5}$) and exact 64-bit integer/decimal preservation.
+- **Case 13 & 14:** NaN vs Null vs Inf distinction (surfacing `NON_FINITE_FLOAT_WARNING` and `NUMERIC_CORRUPTION`) and NFC Unicode string normalization.
+- **Case 15:** Deterministic dataset fingerprints:
+  $$H_{\text{fingerprint}}(D) = \text{SHA-256}(\text{SchemaHash} \parallel H_{\text{multiset}}(D) \parallel |D|)$$
+- **Dual Execution Modes:** Pure in-memory Python list comparison (`TabularComparator.compare`) and high-throughput vectorized DuckDB SQL outer joins (`TabularComparator.compare_tables`).
+
+### 9.2 Earliest Observable Divergence (EOD) & Diagnostic Rules (`data_rewind.diagnostics`)
+- **EOD Detection Engine (`EODDetector`):** Isolates the earliest topological node where outputs diverged. Handles missing intermediate checkpoints (`COARSE_GRAINED_EOD`), independent concurrent divergent branches (`CONCURRENT_DIVERGENCE_POINTS`), upstream input data drift, and non-deterministic transformations.
+- **The Six Diagnostic Rules (`DiagnosticRuleEngine`):**
+  - **DR-01:** `UPSTREAM_INPUT_DATA_DRIFT` (Evidence Tier: `CAUSAL_HYPOTHESIS_INPUT_DRIFT`)
+  - **DR-02:** `ARITHMETIC_EXPRESSION_MUTATION` (Evidence Tier: `CAUSAL_HYPOTHESIS_DIRECT_CODE_DIFF`)
+  - **DR-03:** `UNMATCHED_JOIN_DROP` (Evidence Tier: `PROVEN_OBSERVATION`)
+  - **DR-04:** `DUPLICATION_CARDINALITY_BURST` (Evidence Tier: `PROVEN_OBSERVATION`)
+  - **DR-05:** `NULL_SENTINEL_SURGE` (Evidence Tier: `PROVEN_OBSERVATION`)
+  - **DR-06:** `NONDETERMINISTIC_TRANSFORMATION` (Evidence Tier: `PROVEN_OBSERVATION`)
+
+### 9.3 Reproducible Benchmark Protocol (`data_rewind.benchmarks`)
+- **CLI Command:** `data-rewind benchmark [--quick] [--output <path>]`
+- **Instrumentation:** Wall-clock elapsed time measured via `time.perf_counter_ns()`, RSS memory sampled at 5-10ms intervals via `psutil`.
+- **Target Verification:** 500,000-row relational outer joins verified at **~515 ms** (provisional target: $< 1.5$s) and **~103.7 MiB** peak $\Delta\text{RSS}$ (provisional target: $< 120$ MiB).
+
+---
+
+## 10. Explicit Non-Goals for Milestone 2.0
+
+The following capabilities are governed by subsequent roadmap milestones:
 - BFS graph taint propagator for lineage blast radius (Milestone 3.0).
 - Historical replay orchestrator (Milestone 3.0).
 - Tri-run fix verification (Milestone 4.0).
 - Forensic dossier export (Milestone 4.0).
 - React/Vite/Tailwind frontend & `@xyflow/react` lineage canvas (Milestone 5.0).
-- Multi-user cloud deployment (Non-goal; local-first primary).
+- Full CSV upload REST API endpoints (Milestone 5.0).
 
 ---
 
-## 10. Next Milestone Prerequisites (Milestone 2.0)
+## 11. Next Milestone Prerequisites (Milestone 3.0)
 
-With Milestone 1.0 core engine foundations, security guards, DuckDB runtime, Kahn's DAG validator, and canonical hashing completed and verified, the project is ready for **Milestone 2.0 (Forensic Tabular Comparator & Benchmark Protocol)**:
-1. Implement the 15 forensic comparison cases (PK, composite keys, keyless multiset, null keys, duplicate keys, float $\epsilon$ tolerance, NaN vs Null).
-2. Implement the Earliest Observable Divergence (EOD) detection engine.
-3. Codify the 6 forensic diagnostic rules.
-4. Execute the formal Reproducible Benchmark Protocol across 10k, 50k, 100k, and 500k-row datasets under cold and warm cache conditions.
+With Milestone 2.0 completed and verified (124 passing unit/regression tests, 94.15% branch coverage, passing benchmark protocol), the project is ready for **Milestone 3.0 (Lineage Graph Blast Radius & Replay Orchestrator)**:
+1. Implement breadth-first graph taint propagation to assess downstream impact of identified EOD nodes.
+2. Implement isolated historical execution replay coordinator.
+3. Validate deterministic node rerun checkpoints with DuckDB persistence.

@@ -43,3 +43,9 @@ def test_cli_main_entrypoint(
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0
+
+    # Test benchmark dispatch
+    monkeypatch.setattr(sys, "argv", ["data-rewind", "benchmark", "--quick"])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
