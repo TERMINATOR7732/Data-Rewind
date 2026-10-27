@@ -276,6 +276,12 @@ class PipelineExecutor:
             left_table = inputs[0]
             right_table = inputs[1]
             join_type = params.get("join_type", "inner").upper()
+            allowed_joins = {"INNER", "LEFT", "RIGHT", "FULL", "CROSS", "SEMI", "ANTI"}
+            if join_type not in allowed_joins:
+                raise DataRewindError(
+                    f"Invalid join_type '{join_type}' in step '{sid}'. Allowed: {sorted(allowed_joins)}",
+                    code="INVALID_JOIN_TYPE",
+                )
             join_keys = params.get("join_keys", [])
             on_clause = params.get("on")
 
@@ -340,6 +346,37 @@ class PipelineExecutor:
             if not target_types:
                 runtime.execute_statement(f'CREATE TABLE "{sid}" AS SELECT * FROM "{in_table}"')
                 return
+
+            allowed_types = {
+                "BIGINT",
+                "BOOLEAN",
+                "DATE",
+                "DOUBLE",
+                "FLOAT",
+                "HUGEINT",
+                "INTEGER",
+                "INT",
+                "SMALLINT",
+                "TIMESTAMP",
+                "TIMESTAMP WITH TIME ZONE",
+                "TINYINT",
+                "UBIGINT",
+                "UINTEGER",
+                "USMALLINT",
+                "UTINYINT",
+                "VARCHAR",
+                "TEXT",
+                "DECIMAL",
+                "NUMERIC",
+                "TIME",
+            }
+            for col_name, t_type in target_types.items():
+                base_type = str(t_type).strip().upper().split("(")[0].strip()
+                if base_type not in allowed_types:
+                    raise DataRewindError(
+                        f"Disallowed or unknown cast target type '{t_type}' for column '{col_name}' in step '{sid}'",
+                        code="INVALID_CAST_TYPE",
+                    )
 
             cast_cols = list(target_types.keys())
             cast_parts = [f'CAST("{col}" AS {target_types[col]}) AS "{col}"' for col in cast_cols]

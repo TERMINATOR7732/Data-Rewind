@@ -28,9 +28,16 @@ class InvestigationRepository:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
+    def _connect(self) -> sqlite3.Connection:
+        """Open a SQLite connection configured with WAL journal mode and busy timeout."""
+        conn = sqlite3.connect(str(self.db_path))
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
+        return conn
+
     def _init_db(self) -> None:
         """Create investigations table schema if not exists."""
-        with sqlite3.connect(str(self.db_path)) as conn:
+        with self._connect() as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS investigations (
@@ -54,7 +61,7 @@ class InvestigationRepository:
         data_json = investigation.model_dump_json()
         primary_eod = investigation.eod_result.primary_eod_step
 
-        with sqlite3.connect(str(self.db_path)) as conn:
+        with self._connect() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO investigations (
@@ -87,7 +94,7 @@ class InvestigationRepository:
 
     def get(self, investigation_id: UUID) -> Investigation | None:
         """Retrieve an investigation by UUID."""
-        with sqlite3.connect(str(self.db_path)) as conn:
+        with self._connect() as conn:
             cursor = conn.execute(
                 "SELECT data_json FROM investigations WHERE investigation_id = ?",
                 (str(investigation_id),),
@@ -100,7 +107,7 @@ class InvestigationRepository:
 
     def list(self) -> list[InvestigationSummary]:
         """List all investigations ordered by creation timestamp descending."""
-        with sqlite3.connect(str(self.db_path)) as conn:
+        with self._connect() as conn:
             cursor = conn.execute(
                 """
                 SELECT
@@ -137,7 +144,7 @@ class InvestigationRepository:
 
     def delete(self, investigation_id: UUID) -> bool:
         """Delete an investigation record."""
-        with sqlite3.connect(str(self.db_path)) as conn:
+        with self._connect() as conn:
             cursor = conn.execute(
                 "DELETE FROM investigations WHERE investigation_id = ?",
                 (str(investigation_id),),

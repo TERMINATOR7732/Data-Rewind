@@ -22,8 +22,10 @@ def generate_replay_manifest(
     pipeline_definition_hash: str,
     inputs: Sequence[ManifestInput],
     steps: Sequence[TransformationStep],
+    step_output_hashes: dict[str, str] | None = None,
 ) -> ReplayManifest:
     """Generate canonical replay manifest for an executed run."""
+    hashes = step_output_hashes or {}
     step_snapshots = [
         ManifestStepSnapshot(
             step_id=s.step_id,
@@ -34,6 +36,7 @@ def generate_replay_manifest(
             ),
             parameters=dict(s.parameters),
             input_step_ids=list(s.input_step_ids),
+            output_multiset_hash=hashes.get(s.step_id),
         )
         for s in steps
     ]

@@ -131,7 +131,15 @@ class HistoricalReplayer:
         step_verifications: dict[str, ReplayStepVerification] = {}
         late_divergence_step: str | None = None
         has_divergence = False
-        hist_hashes = historical_step_hashes or {}
+        has_missing_hashes = False
+
+        hist_hashes: dict[str, str] = {}
+        if historical_step_hashes is not None:
+            hist_hashes = dict(historical_step_hashes)
+        else:
+            for snap in manifest.steps_snapshot:
+                if snap.output_multiset_hash is not None:
+                    hist_hashes[snap.step_id] = snap.output_multiset_hash
 
         for sid in exec_res.topological_order:
             step_result = exec_res.step_results.get(sid)
@@ -155,13 +163,27 @@ class HistoricalReplayer:
                     variance_details=None if is_match else "Output multiset hash diverged",
                 )
             else:
-                # If historical hash is omitted, assume reproducible step
+                has_missing_hashes = True
                 step_verifications[sid] = ReplayStepVerification(
                     step_id=sid,
                     historical_multiset_hash=hist_hash,
                     replayed_multiset_hash=replayed_hash,
-                    is_matched=True,
+                    is_matched=False,
+                    variance_details="Missing historical multiset hash; output unverifiable",
                 )
+
+        if has_missing_hashes and not hist_hashes:
+            return ReplayResult(
+                replay_run_id=replay_id,
+                historical_run_id=manifest.run_id,
+                outcome=ReplayOutcome.FAILED_VERIFICATION,
+                explanation=(
+                    "Replay verification incomplete: historical output multiset hashes are missing "
+                    "from the manifest and verification cannot be proven."
+                ),
+                step_verifications=step_verifications,
+                execution_duration_ms=round(elapsed, 3),
+            )
 
         if has_divergence:
             return ReplayResult(

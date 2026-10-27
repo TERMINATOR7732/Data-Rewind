@@ -81,6 +81,7 @@ class ManifestStepSnapshot(BaseModel):
     operation: str
     parameters: dict[str, Any] = Field(default_factory=dict)
     input_step_ids: list[str] = Field(default_factory=list)
+    output_multiset_hash: str | None = None
 
 
 class ReplayManifest(BaseModel):

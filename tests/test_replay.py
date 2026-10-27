@@ -240,3 +240,55 @@ def test_replay_outcome_failed_verification(replay_workspace: Path) -> None:
 
     assert result.outcome == ReplayOutcome.FAILED_VERIFICATION
     assert "failed during evaluation" in result.explanation
+
+
+def test_replay_outcome_missing_historical_hashes_fails(replay_workspace: Path) -> None:
+    """Verify that replaying without historical step hashes does not falsely claim 100% equivalence."""
+    raw_dir = replay_workspace / "raw_inputs"
+    test_csv = raw_dir / "valid_data.csv"
+    with open(test_csv, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["id", "val"])
+        writer.writeheader()
+        writer.writerow({"id": 1, "val": "A"})
+
+    c_hash = compute_content_hash(test_csv)
+    m_hash = compute_multiset_hash([{"id": 1, "val": "A"}])
+    pinned_csv = raw_dir / f"{c_hash}.csv"
+    test_csv.replace(pinned_csv)
+
+    steps = [
+        TransformationStep(
+            step_id="step_noop",
+            operation_type=OperationType.FILTER_ROWS,
+            input_step_ids=["raw_data"],
+            parameters={"predicate": "id == 1"},
+        )
+    ]
+
+    manifest = generate_replay_manifest(
+        run_id=uuid4(),
+        pipeline_version_id=uuid4(),
+        pipeline_definition_hash="0" * 64,
+        inputs=[
+            ManifestInput(
+                input_id="raw_data",
+                version_id=uuid4(),
+                content_hash=c_hash,
+                multiset_hash=m_hash,
+                row_count=1,
+                byte_size=pinned_csv.stat().st_size,
+            )
+        ],
+        steps=steps,
+    )
+
+    # Replay without providing historical step hashes and manifest snapshot lacks them
+    result = HistoricalReplayer.replay_run(
+        manifest=manifest,
+        workspace_root=replay_workspace,
+        historical_step_hashes=None,
+    )
+
+    assert result.outcome == ReplayOutcome.FAILED_VERIFICATION
+    assert "missing" in result.explanation.lower()
+    assert result.step_verifications["step_noop"].is_matched is False

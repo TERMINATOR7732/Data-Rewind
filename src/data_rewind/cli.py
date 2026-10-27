@@ -34,6 +34,16 @@ from data_rewind.replay.manifest_generator import generate_replay_manifest
 from data_rewind.replay.replayer import HistoricalReplayer
 from data_rewind.scenarios.definitions import SCENARIO_REGISTRY
 from data_rewind.scenarios.runner import ScenarioRunner
+from data_rewind.verification.models import (
+    IntentionalUpdateContract,
+    VerificationVerdict,
+)
+from data_rewind.verification.persistence import VerificationRepository
+from data_rewind.verification.reports import (
+    CSVDossierExporter,
+    JSONDossierExporter,
+    MarkdownDossierExporter,
+)
 
 
 def print_diagnostics() -> int:
@@ -295,6 +305,134 @@ def handle_manifest(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_verify_fix(args: argparse.Namespace) -> int:
+    """Execute Tri-Run Fix Verification for a scenario and display forensic report."""
+    settings = Settings.load()
+    scenario_id = (args.scenario or "scn01").lower()
+    fix_mode = getattr(args, "fix_mode", "clean") or "clean"
+
+    db_path = settings.base_data_dir / "metadata.db"
+    repo = VerificationRepository(db_path)
+
+    contract = None
+    if fix_mode == "intentional":
+        contract = IntentionalUpdateContract(
+            allowed_steps=["ingest_orders", "compute_fee", "join_orders", "normalize_scores"],
+            allowed_columns_by_step={},
+            justification="Intentional pipeline logic update verified against business contract.",
+        )
+
+    dossier = ScenarioRunner.verify_scenario_fix(
+        scenario_id=scenario_id,
+        workspace_root=settings.base_data_dir,
+        fix_mode=fix_mode,
+        intentional_contract=contract,
+        repository=repo,
+    )
+
+    fmt = args.format
+    output_text = ""
+    if fmt == "json":
+        output_text = JSONDossierExporter.export(dossier)
+    elif fmt == "markdown":
+        output_text = MarkdownDossierExporter.export(dossier)
+    elif fmt == "csv-safe":
+        output_text, _ = CSVDossierExporter.export_verification_summary(
+            dossier.verification, export_mode="safe"
+        )
+    elif fmt == "csv-raw":
+        output_text, _ = CSVDossierExporter.export_verification_summary(
+            dossier.verification, export_mode="raw"
+        )
+    else:
+        v = dossier.verification
+        print("=" * 65)
+        print("DATA REWIND TRI-RUN FIX VERIFICATION")
+        print("=" * 65)
+        print(f"Verification ID:        {v.verification_id}")
+        print(f"Scenario:               {scenario_id.upper()}")
+        print(f"Fix Mode Tested:        {fix_mode.upper()}")
+        print(f"Verdict:                {v.verdict.value}")
+        print(f"Meaning:                {v.verdict_meaning}")
+        print(f"Reason Codes:           {', '.join(v.verdict_reason_codes)}")
+        print(f"R0 Baseline Run ID:     {v.baseline_run_id}")
+        print(f"R1 Faulted Run ID:      {v.faulted_run_id}")
+        print(f"R2 Candidate Fix ID:    {v.candidate_run_id}")
+        print("-" * 65)
+        print("DUAL-AXIS RESULTS:")
+        print(
+            f"  Axis 1 (Remediation): EOD Remediated={'YES' if v.dual_axis.remediation_axis.eod_remediated else 'NO'} "
+            f"({v.dual_axis.remediation_axis.explanation})"
+        )
+        if v.dual_axis.baseline_axis:
+            print(
+                f"  Axis 2 (Baseline):    Sinks Equivalent={'YES' if v.dual_axis.baseline_axis.baseline_equivalent_at_sinks else 'NO'} "
+                f"({v.dual_axis.baseline_axis.explanation})"
+            )
+            if v.dual_axis.baseline_axis.collateral_regressions:
+                print(
+                    f"  Collateral Faults:    {', '.join(v.dual_axis.baseline_axis.collateral_regressions)}"
+                )
+        print("=" * 65)
+
+    if output_text:
+        if args.output:
+            Path(args.output).write_text(output_text, encoding="utf-8")
+            print(f"Report exported to: {args.output}")
+        else:
+            print(output_text)
+
+    is_success = dossier.verification.verdict in (
+        VerificationVerdict.VERIFIED_CLEAN,
+        VerificationVerdict.INTENTIONAL_UPDATE,
+    )
+    return 0 if is_success else 1
+
+
+def handle_export_report(args: argparse.Namespace) -> int:
+    """Export an existing persisted verification dossier to requested format."""
+    settings = Settings.load()
+    db_path = settings.base_data_dir / "metadata.db"
+    repo = VerificationRepository(db_path)
+
+    verif_id_str = args.verification_id
+    try:
+        from uuid import UUID
+
+        verif_id = UUID(verif_id_str)
+    except ValueError:
+        print(f"Error: Invalid verification UUID '{verif_id_str}'", file=sys.stderr)
+        return 1
+
+    dossier = repo.get_dossier_by_verification(verif_id)
+    if not dossier:
+        print(f"Error: Dossier not found for verification ID '{verif_id}'", file=sys.stderr)
+        return 1
+
+    fmt = args.format
+    if fmt == "json":
+        content = JSONDossierExporter.export(dossier)
+    elif fmt == "markdown":
+        content = MarkdownDossierExporter.export(dossier)
+    elif fmt == "csv-safe":
+        content, _ = CSVDossierExporter.export_verification_summary(
+            dossier.verification, export_mode="safe"
+        )
+    elif fmt == "csv-raw":
+        content, _ = CSVDossierExporter.export_verification_summary(
+            dossier.verification, export_mode="raw"
+        )
+    else:
+        content = MarkdownDossierExporter.export(dossier)
+
+    if args.output:
+        Path(args.output).write_text(content, encoding="utf-8")
+        print(f"Report exported successfully to: {args.output}")
+    else:
+        print(content)
+    return 0
+
+
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -365,6 +503,47 @@ def main() -> None:
     )
     manifest_parser.add_argument("--output", "-o", type=str, default=None, help="Output file path")
 
+    verify_parser = subparsers.add_parser(
+        "verify-fix", help="Execute Tri-Run Fix Verification for a scenario"
+    )
+    verify_parser.add_argument(
+        "--scenario", "-s", type=str, default="scn01", help="Scenario ID (scn01..scn04)"
+    )
+    verify_parser.add_argument(
+        "--fix-mode",
+        "-m",
+        choices=["clean", "intentional", "partial", "unresolved", "collateral"],
+        default="clean",
+        help="Candidate remediation mode to test",
+    )
+    verify_parser.add_argument(
+        "--format",
+        "-f",
+        choices=["text", "json", "markdown", "csv-safe", "csv-raw"],
+        default="text",
+        help="Report export format",
+    )
+    verify_parser.add_argument("--output", "-o", type=str, default=None, help="Output file path")
+
+    export_parser = subparsers.add_parser(
+        "export-report", help="Export persisted forensic dossier to JSON, Markdown, or CSV"
+    )
+    export_parser.add_argument(
+        "--verification-id",
+        "-id",
+        type=str,
+        required=True,
+        help="Verification UUID to export",
+    )
+    export_parser.add_argument(
+        "--format",
+        "-f",
+        choices=["json", "markdown", "csv-safe", "csv-raw"],
+        default="markdown",
+        help="Dossier format",
+    )
+    export_parser.add_argument("--output", "-o", type=str, default=None, help="Output file path")
+
     args = parser.parse_args()
 
     if args.command == "smoke-test":
@@ -389,6 +568,10 @@ def main() -> None:
         sys.exit(handle_replay(args))
     elif args.command == "manifest":
         sys.exit(handle_manifest(args))
+    elif args.command == "verify-fix":
+        sys.exit(handle_verify_fix(args))
+    elif args.command == "export-report":
+        sys.exit(handle_export_report(args))
     elif args.command == "diagnostics" or not args.command:
         sys.exit(print_diagnostics())
 
