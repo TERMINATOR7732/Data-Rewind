@@ -1,0 +1,227 @@
+{
+  "suite_title": "Data Rewind End-to-End Performance & Memory Benchmark Suite",
+  "generated_at_utc": "2026-10-28T09:32:36.011192+00:00",
+  "system_info": {
+    "os_platform": "Windows",
+    "os_release": "10",
+    "cpu_count_logical": 12,
+    "cpu_count_physical": 6,
+    "total_ram_bytes": 16544264192,
+    "total_ram_mib": 15777.84,
+    "python_version": "3.12.0",
+    "duckdb_version": "2.0.0"
+  },
+  "operations": [
+    {
+      "name": "csv_ingestion_1k",
+      "category": "CSV Ingestion",
+      "elapsed_ms": 132.75,
+      "peak_rss_mib": 62.8,
+      "delta_rss_mib": 23.95,
+      "details": {
+        "row_count": 1000,
+        "byte_size": 38358,
+        "throughput_rows_sec": 7533.1,
+        "rows_verified": true
+      },
+      "passed_budget": true
+    },
+    {
+      "name": "csv_ingestion_10k",
+      "category": "CSV Ingestion",
+      "elapsed_ms": 80.72,
+      "peak_rss_mib": 64.48,
+      "delta_rss_mib": 12.0,
+      "details": {
+        "row_count": 10000,
+        "byte_size": 393228,
+        "throughput_rows_sec": 123882.4,
+        "rows_verified": true
+      },
+      "passed_budget": true
+    },
+    {
+      "name": "csv_ingestion_50k",
+      "category": "CSV Ingestion",
+      "elapsed_ms": 110.82,
+      "peak_rss_mib": 66.73,
+      "delta_rss_mib": 14.17,
+      "details": {
+        "row_count": 50000,
+        "byte_size": 2010428,
+        "throughput_rows_sec": 451176.4,
+        "rows_verified": true
+      },
+      "passed_budget": true
+    },
+    {
+      "name": "keyed_comparison_10k",
+      "category": "Tabular Keyed Comparison",
+      "elapsed_ms": 70.14,
+      "peak_rss_mib": 71.24,
+      "delta_rss_mib": 7.21,
+      "details": {
+        "row_count": 10000,
+        "col_count": 10,
+        "identical": 9840,
+        "modified": 80,
+        "added": 40,
+        "removed": 80,
+        "partitions_valid": true
+      },
+      "passed_budget": true
+    },
+    {
+      "name": "keyed_comparison_50k",
+      "category": "Tabular Keyed Comparison",
+      "elapsed_ms": 148.05,
+      "peak_rss_mib": 91.91,
+      "delta_rss_mib": 12.27,
+      "details": {
+        "row_count": 50000,
+        "col_count": 10,
+        "identical": 49200,
+        "modified": 400,
+        "added": 200,
+        "removed": 400,
+        "partitions_valid": true
+      },
+      "passed_budget": true
+    },
+    {
+      "name": "keyed_comparison_100k",
+      "category": "Tabular Keyed Comparison",
+      "elapsed_ms": 248.11,
+      "peak_rss_mib": 115.04,
+      "delta_rss_mib": 20.66,
+      "details": {
+        "row_count": 100000,
+        "col_count": 10,
+        "identical": 98400,
+        "modified": 800,
+        "added": 400,
+        "removed": 800,
+        "partitions_valid": true
+      },
+      "passed_budget": true
+    },
+    {
+      "name": "keyed_comparison_500k",
+      "category": "Tabular Keyed Comparison",
+      "elapsed_ms": 623.77,
+      "peak_rss_mib": 301.31,
+      "delta_rss_mib": 104.28,
+      "details": {
+        "row_count": 500000,
+        "col_count": 10,
+        "identical": 492000,
+        "modified": 4000,
+        "added": 2000,
+        "removed": 4000,
+        "partitions_valid": true
+      },
+      "passed_budget": true
+    },
+    {
+      "name": "keyless_multiset_10k",
+      "category": "Tabular Keyless Comparison",
+      "elapsed_ms": 125.91,
+      "peak_rss_mib": 82.48,
+      "delta_rss_mib": 9.95,
+      "details": {
+        "row_count": 10000,
+        "reordered": true,
+        "duplicates_present": true,
+        "identical": 9840,
+        "modified": 0,
+        "added": 120,
+        "removed": 160,
+        "partitions_valid": true
+      },
+      "passed_budget": true
+    },
+    {
+      "name": "pipeline_execution_dag",
+      "category": "Full Pipeline Execution",
+      "elapsed_ms": 57.32,
+      "peak_rss_mib": 71.38,
+      "delta_rss_mib": 7.18,
+      "details": {
+        "step_count": 3,
+        "total_rows_processed": 10,
+        "step_latencies_ms": {
+          "ingest_orders": 5.38,
+          "filter_completed": 5.37,
+          "aggregate_revenue": 5.28
+        },
+        "checkpoints_written": 3
+      },
+      "passed_budget": true
+    },
+    {
+      "name": "manifest_replay_and_tamper_detection",
+      "category": "Historical Replay & Manifest Verification",
+      "elapsed_ms": 50.07,
+      "peak_rss_mib": 74.07,
+      "delta_rss_mib": 9.15,
+      "details": {
+        "clean_replay_outcome": "REPRODUCIBLE",
+        "reproducible_verified": true,
+        "tamper_detected": true,
+        "tamper_outcome": "BLOCKED_MISSING_ARTIFACTS"
+      },
+      "passed_budget": true
+    },
+    {
+      "name": "tri_run_verification_clean",
+      "category": "Tri-Run Fix Verification",
+      "elapsed_ms": 513.35,
+      "peak_rss_mib": 71.33,
+      "delta_rss_mib": 6.46,
+      "details": {
+        "verdict": "VERIFIED_CLEAN",
+        "expected_verdict": "VERIFIED_CLEAN",
+        "verdict_correct": true,
+        "evidence_count": 2
+      },
+      "passed_budget": true
+    },
+    {
+      "name": "tri_run_verification_unresolved",
+      "category": "Tri-Run Fix Verification",
+      "elapsed_ms": 512.06,
+      "peak_rss_mib": 71.39,
+      "delta_rss_mib": 1.75,
+      "details": {
+        "verdict": "REGRESSION_UNRESOLVED",
+        "expected_verdict": "REGRESSION_UNRESOLVED",
+        "verdict_correct": true,
+        "evidence_count": 2
+      },
+      "passed_budget": true
+    }
+  ],
+  "budget_checks": {
+    "max_peak_rss_limit_512_mib": {
+      "actual_peak_rss_mib": 301.31,
+      "limit_mib": 512.0,
+      "passed": true
+    },
+    "target_500k_time_1500_ms": {
+      "actual_ms": 623.77,
+      "target_ms": 1500.0,
+      "passed": true,
+      "applicable": true
+    },
+    "target_500k_delta_rss_120_mib": {
+      "actual_delta_rss_mib": 104.28,
+      "limit_mib": 120.0,
+      "passed": true,
+      "applicable": true
+    },
+    "all_partitions_valid": {
+      "passed": true
+    }
+  },
+  "all_budgets_passed": true
+}

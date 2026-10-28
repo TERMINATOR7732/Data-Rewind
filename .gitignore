@@ -32,15 +32,17 @@ htmlcov/
 coverage.xml
 .ruff_cache/
 .mypy_cache/
+test-results/
+playwright-report/
 
 # Local application data and artifacts
 .data_rewind/
+.data_rewind_test_*/
 tmp/
 *.tmp
 *.log
 *.duckdb
 *.duckdb.wal
-benchmarks/output/
 benchmarks/data/
 
 # Operating system and IDEs
@@ -58,4 +60,6 @@ Thumbs.db
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/playwright-report/
+frontend/test-results/
 *.tsbuildinfo

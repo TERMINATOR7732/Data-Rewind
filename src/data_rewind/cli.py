@@ -50,7 +50,7 @@ def handle_serve(args: argparse.Namespace) -> int:
     """Launch the Data Rewind FastAPI local server on loopback."""
     import uvicorn
 
-    host = "127.0.0.1"  # Bound strictly to loopback (SPEC-MOD-07 §1.1)
+    host = getattr(args, "host", "127.0.0.1") or "127.0.0.1"
     port = args.port or 8000
     print(f"Starting Data Rewind API server on http://{host}:{port}/api/v1 (loopback only)...")
     uvicorn.run("data_rewind.api.main:app", host=host, port=port, log_level="info")
@@ -559,6 +559,13 @@ def main() -> None:
         "serve", help="Launch Data Rewind local-first API server on loopback (127.0.0.1)"
     )
     serve_parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        choices=["127.0.0.1", "localhost"],
+        help="Host interface (must be loopback, default: 127.0.0.1)",
+    )
+    serve_parser.add_argument(
         "--port", "-p", type=int, default=8000, help="Port to bind (default: 8000)"
     )
 
@@ -571,13 +578,16 @@ def main() -> None:
     elif args.command == "benchmark":
         from pathlib import Path
 
-        from data_rewind.benchmarks import format_report_table, run_benchmarks
+        from data_rewind.benchmarks.e2e_suite import (
+            execute_full_benchmark_suite,
+            format_markdown_report,
+        )
 
-        out_path = Path(args.output) if args.output else None
-        print("Executing Data Rewind Reproducible Benchmark Protocol...")
-        report = run_benchmarks(quick=args.quick, output_path=out_path)
-        print("\n" + format_report_table(report))
-        sys.exit(0 if report.all_targets_met else 1)
+        out_dir = Path(args.output).parent if args.output else Path("benchmarks/output")
+        print("Executing Data Rewind End-to-End Performance & Memory Benchmark Suite...")
+        report = execute_full_benchmark_suite(quick=args.quick, output_dir=out_dir)
+        print("\n" + format_markdown_report(report))
+        sys.exit(0 if report.all_budgets_passed else 1)
     elif args.command == "investigate":
         sys.exit(handle_investigate(args))
     elif args.command == "lineage":

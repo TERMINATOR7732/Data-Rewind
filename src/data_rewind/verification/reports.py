@@ -67,13 +67,14 @@ class CSVFormulaEscaper:
                 return val_str, False
 
         # Rule 2: Untrusted String / Text Sanitization Rule
-        # Inspect leading non-whitespace character
+        # Inspect leading raw character and leading non-whitespace character
         stripped = val_str.lstrip(" \t\r\n")
         if not stripped:
             return val_str, False
 
+        raw_first = val_str[0] if val_str else ""
         first_char = stripped[0]
-        if first_char in DANGEROUS_FORMULA_PREFIXES:
+        if raw_first in DANGEROUS_FORMULA_PREFIXES or first_char in DANGEROUS_FORMULA_PREFIXES:
             # Rule 2b: Attempt strict numeric parse
             try:
                 # If the string cleanly parses as integer or float, it is a legitimate numeric literal

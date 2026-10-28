@@ -1,0 +1,5 @@
+id,formula_test,num_pos,num_neg,label
+1,=1+1,+100,-42.50,normal
+2,-cmd|' /C calc'!A0,+250,-12.00,exploit_minus
+3,@SUM(A1:A10),+50,-0.75,exploit_at
+4,+calc|A0,+15,-999.99,exploit_plus
