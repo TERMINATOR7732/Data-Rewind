@@ -46,6 +46,17 @@ from data_rewind.verification.reports import (
 )
 
 
+def handle_serve(args: argparse.Namespace) -> int:
+    """Launch the Data Rewind FastAPI local server on loopback."""
+    import uvicorn
+
+    host = "127.0.0.1"  # Bound strictly to loopback (SPEC-MOD-07 §1.1)
+    port = args.port or 8000
+    print(f"Starting Data Rewind API server on http://{host}:{port}/api/v1 (loopback only)...")
+    uvicorn.run("data_rewind.api.main:app", host=host, port=port, log_level="info")
+    return 0
+
+
 def print_diagnostics() -> int:
     """Print system and configuration diagnostics to stdout."""
     settings = Settings.load()
@@ -544,6 +555,13 @@ def main() -> None:
     )
     export_parser.add_argument("--output", "-o", type=str, default=None, help="Output file path")
 
+    serve_parser = subparsers.add_parser(
+        "serve", help="Launch Data Rewind local-first API server on loopback (127.0.0.1)"
+    )
+    serve_parser.add_argument(
+        "--port", "-p", type=int, default=8000, help="Port to bind (default: 8000)"
+    )
+
     args = parser.parse_args()
 
     if args.command == "smoke-test":
@@ -572,6 +590,8 @@ def main() -> None:
         sys.exit(handle_verify_fix(args))
     elif args.command == "export-report":
         sys.exit(handle_export_report(args))
+    elif args.command == "serve":
+        sys.exit(handle_serve(args))
     elif args.command == "diagnostics" or not args.command:
         sys.exit(print_diagnostics())
 
