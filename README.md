@@ -242,24 +242,80 @@ Follow this step-by-step path to experience the core investigation loop:
 Data Rewind is architected for zero-operating-cost cloud demonstration (strict ₹0 budget) using free hosting infrastructure:
 
 - **Source Code Repository:** [https://github.com/TERMINATOR7732/Data-Rewind](https://github.com/TERMINATOR7732/Data-Rewind)
-- **Deployment Architecture:**
-  - **Frontend:** Render Static Site (Free Tier, SPA client-side routing via [`render.yaml`](file:///e:/MHT%20CET%20REGISTRATION/BE/Task/DataRewind/render.yaml) and `_redirects`).
-  - **Backend:** Render Web Service (Free Tier, Python 3.12, Uvicorn on `$PORT`, ephemeral `/tmp/data_rewind` storage).
+- **Primary Hosting Target:** **Vercel** (Unified Single-Origin Serverless Full-Stack: Vite Frontend + Python FastAPI Serverless Functions).
+- **Alternative Hosting Target:** **Render Blueprint** (Dual-Service Free Tier: Static Site + Web Service via [`render.yaml`](file:///e:/MHT%20CET%20REGISTRATION/BE/Task/DataRewind/render.yaml)).
+
+### Operational Characteristics Comparison
+
+| Dimension | Local-First Workstation (Primary) | Vercel Serverless (Recommended Hosted) | Render Blueprint (Alternative Hosted) |
+| :--- | :--- | :--- | :--- |
+| **Operating Model** | Single developer workstation (offline) | Unified single-origin serverless | Dual-service (Static Site + Web Service) |
+| **Operating Cost** | **₹0 / $0** | **₹0 / $0** (Hobby Plan) | **₹0 / $0** (Free Tier) |
+| **Workspace Storage** | Durable `~/.data_rewind` | Ephemeral `/tmp/data_rewind` (512 MB) | Ephemeral `/tmp/data_rewind` (512 MB) |
+| **Persistence Across Inactivity**| 100% durable local SQLite WAL | Ephemeral (resets per container instance) | Ephemeral (resets per container spin-down) |
+| **Cold Start Latency** | **0s** (Instant native execution) | **~1–3s** (Vercel serverless microVM) | **30–50s** (Render free container spin-up) |
+| **Processing Timeout** | 120s per step (configurable) | 60s configured function timeout | 120s HTTP request timeout |
+| **Domain / Origin Architecture** | Single loopback `127.0.0.1:8000` | **Single unified origin** (`*.vercel.app`) | Dual-origin (`*-ui` and `*-api.onrender.com`)|
+| **CORS Configuration** | Loopback only | Not required (Same-Origin) | Cross-origin headers required |
+| **Demo Capabilities** | Unrestricted (50 MB CSV, ad-hoc DAGs) | 4 Canonical Scenarios (`SCN-01` to `SCN-04`) | 4 Canonical Scenarios (`SCN-01` to `SCN-04`) |
 
 ### Hosted Demo Limitations & Safeguards
 To preserve strict zero-operating-cost governance and protect host resources on unauthenticated public infrastructure:
 1. **Demo Sandbox Primary Flow:** The hosted environment operates under `DATA_REWIND_PROFILE=hosted_demo`, providing full access to all 4 canonical scenarios (`SCN-01` to `SCN-04`). DAG execution, row-level diffing, EOD localization, Tri-Run fix verification, and signed forensic reporting are 100% operational.
 2. **Safe Boundary Restrictions:** Custom CSV uploads and ad-hoc pipeline editing are restricted in the public demo (`403 FEATURE_RESTRICTED_IN_DEMO`) to prevent unauthenticated data persistence. Clone the repository for the unrestricted local-first engine with full 50 MB / 500k-row CSV ingestion.
-3. **Ephemeral Session Storage:** In-process DuckDB tables and Parquet checkpoints reside in ephemeral container storage (`/tmp/data_rewind`) and reset upon container restart.
-4. **Free Tier Cold Starts:** On free hosting plans, backend instances spin down after inactivity. Initial request wake-up requires ~30–50 seconds.
+3. **Ephemeral Session Storage:** In-process DuckDB tables, SQLite WAL databases, and Parquet checkpoints reside in ephemeral container scratch storage (`/tmp/data_rewind`) and reset upon container recycling. Scenarios are deterministically regenerated from code.
+4. **Serverless Execution Limits:** Individual scenario runs execute in ~0.5–2.5 seconds, well within Vercel's 60-second function timeout and 2 GB memory ceiling.
 
-### 1-Click Deployment via Render Blueprint
-1. Ensure the repository is published to GitHub (`https://github.com/TERMINATOR7732/Data-Rewind`).
-2. Log into the [Render Dashboard](https://dashboard.render.com/) and click **New** $\to$ **Blueprint**.
-3. Select your `Data-Rewind` repository. Render automatically reads [`render.yaml`](file:///e:/MHT%20CET%20REGISTRATION/BE/Task/DataRewind/render.yaml) and provisions:
+---
+
+### Deploying to Vercel (Recommended Option)
+
+Data Rewind is pre-configured with a root [`vercel.json`](file:///e:/MHT%20CET%20REGISTRATION/BE/Task/DataRewind/vercel.json) that compiles the React/TypeScript frontend into `frontend/dist` and mounts the FastAPI backend as a Python serverless function at `api/index.py`.
+
+#### Method A: Via Vercel GitHub Integration (Web Dashboard)
+1. Ensure your latest changes are pushed to GitHub:
+   ```bash
+   git push origin main
+   ```
+2. Navigate to [vercel.com/new](https://vercel.com/new) and log in with GitHub.
+3. Import the `TERMINATOR7732/Data-Rewind` repository.
+4. Vercel automatically detects the project configuration from [`vercel.json`](file:///e:/MHT%20CET%20REGISTRATION/BE/Task/DataRewind/vercel.json):
+   - **Framework Preset:** Other / Vite
+   - **Root Directory:** `./` (Leave as default project root)
+   - **Build Command:** `npm --prefix frontend install && npm --prefix frontend run build`
+   - **Output Directory:** `frontend/dist`
+5. Environment Variables:
+   - `DATA_REWIND_PROFILE`: `hosted_demo` *(Defaults automatically in `api/index.py` if omitted)*
+   - `DATA_REWIND_DATA_DIR`: `/tmp/data_rewind` *(Defaults automatically in `api/index.py` if omitted)*
+6. Click **Deploy**. Vercel builds the static bundle, provisions the Python 3.12 serverless function, and deploys to `https://data-rewind.vercel.app` (or your assigned project subdomain) with full HTTPS and automatic CI/CD on git push.
+
+#### Method B: Via Vercel CLI
+1. Install the Vercel CLI globally (if not already installed):
+   ```bash
+   npm install -g vercel
+   ```
+2. Authenticate and link your project from the repository root:
+   ```bash
+   vercel login
+   vercel link
+   ```
+3. Deploy directly to production:
+   ```bash
+   vercel --prod
+   ```
+
+---
+
+### Deploying to Render (Alternative Option)
+
+The multi-service Render blueprint is preserved in [`render.yaml`](file:///e:/MHT%20CET%20REGISTRATION/BE/Task/DataRewind/render.yaml):
+1. Log into the [Render Dashboard](https://dashboard.render.com/) and click **New** $\to$ **Blueprint**.
+2. Select your `Data-Rewind` repository. Render automatically reads [`render.yaml`](file:///e:/MHT%20CET%20REGISTRATION/BE/Task/DataRewind/render.yaml) and provisions:
    - `data-rewind-api`: Free Web Service running Python 3.12 + FastAPI + DuckDB.
    - `data-rewind-ui`: Free Static Site building Vite + React + Tailwind.
-4. Click **Apply** to deploy both services on free tier subdomains.
+3. Set `DATA_REWIND_CORS_ORIGINS` on the backend to match the frontend static URL.
+4. Set `VITE_API_URL` on the frontend to match the backend service URL.
+5. Click **Apply** to deploy both services on free tier subdomains.
 
 ---
 

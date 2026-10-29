@@ -10,6 +10,7 @@ Verifies:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -64,6 +65,22 @@ def test_cors_configuration(hosted_client: TestClient) -> None:
         res_hosted.headers.get("access-control-allow-origin")
         == "https://data-rewind-ui.onrender.com"
     )
+
+    # Test Vercel preview and production origins
+    for vercel_origin in [
+        "https://data-rewind.vercel.app",
+        "https://data-rewind-git-main-user.vercel.app",
+        "https://preview-123.vercel.app",
+    ]:
+        res_vercel = hosted_client.options(
+            "/api/v1/health",
+            headers={
+                "Origin": vercel_origin,
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert res_vercel.status_code == 200
+        assert res_vercel.headers.get("access-control-allow-origin") == vercel_origin
 
     # Test loopback origin still works
     res_loopback = hosted_client.options(
@@ -169,3 +186,69 @@ def test_hosted_demo_scenario_execution_succeeds(hosted_client: TestClient) -> N
     assert verify_res.status_code == 200
     dossier = verify_res.json()
     assert dossier["verification"]["verdict"] == "VERIFIED_CLEAN"
+
+
+def test_vercel_configuration_integrity() -> None:
+    """Verify that vercel.json and .python-version conform to platform specifications."""
+    repo_root = Path(__file__).resolve().parent.parent
+
+    # 1. Verify vercel.json
+    vercel_path = repo_root / "vercel.json"
+    assert vercel_path.is_file(), "Root vercel.json must exist"
+
+    with open(vercel_path, encoding="utf-8") as f:
+        config = json.load(f)
+
+    assert config.get("outputDirectory") == "frontend/dist"
+    assert "npm --prefix frontend install" in config.get("buildCommand", "")
+    assert "api/index.py" in config.get("functions", {})
+
+    rewrites = config.get("rewrites", [])
+    assert any(
+        r.get("source") == "/api/(.*)" and r.get("destination") == "/api/index.py" for r in rewrites
+    )
+    assert any(
+        r.get("source") == "/(.*)" and r.get("destination") == "/index.html" for r in rewrites
+    )
+
+    # 2. Verify .python-version
+    pyver_path = repo_root / ".python-version"
+    assert pyver_path.is_file(), ".python-version must exist"
+    assert pyver_path.read_text(encoding="utf-8").strip() == "3.12"
+
+
+def test_vercel_entrypoint_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify that api/index.py loads correctly, enforces defaults, and responds to requests."""
+    # Point workspace to isolated temporary directory
+    demo_dir = tmp_path / "vercel_test_data"
+    monkeypatch.setenv("DATA_REWIND_DATA_DIR", str(demo_dir))
+    monkeypatch.setenv("DATA_REWIND_PROFILE", "hosted_demo")
+
+    # Import the Vercel entrypoint
+    from api.index import app as vercel_app
+
+    client = TestClient(vercel_app)
+
+    # Test top-level /api endpoint
+    api_res = client.get("/api")
+    assert api_res.status_code == 200
+    api_data = api_res.json()
+    assert api_data["status"] == "ok"
+    assert api_data["service"] == "Data Rewind API"
+    assert api_data["profile"] == "hosted_demo"
+    assert api_data["docs_url"] == "/api/docs"
+
+    # Test /api/ trailing slash alias
+    api_slash_res = client.get("/api/")
+    assert api_slash_res.status_code == 200
+
+    # Test /api/v1/health via entrypoint
+    health_res = client.get("/api/v1/health")
+    assert health_res.status_code == 200
+    assert health_res.json()["status"] == "ok"
+
+    # Test /api/v1/scenarios via entrypoint
+    scenarios_res = client.get("/api/v1/scenarios")
+    assert scenarios_res.status_code == 200
+    scenarios = scenarios_res.json()
+    assert len(scenarios) == 4
