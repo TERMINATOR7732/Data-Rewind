@@ -43,6 +43,11 @@ tmp/
 *.log
 *.duckdb
 *.duckdb.wal
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
 benchmarks/data/
 
 # Operating system and IDEs

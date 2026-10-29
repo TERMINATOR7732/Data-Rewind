@@ -108,7 +108,9 @@ export const Header: React.FC<HeaderProps> = ({
                 }`}
               />
               <span className="hidden md:inline">
-                {isConnected ? `127.0.0.1:8000 (${health.profile})` : "Disconnected"}
+                {isConnected
+                  ? (health.profile === "hosted_demo" ? "API Online (hosted demo)" : `127.0.0.1:8000 (${health.profile})`)
+                  : (healthLoading ? "Connecting..." : "Disconnected")}
               </span>
               <RefreshCw className={`w-3 h-3 ${healthLoading ? "animate-spin" : ""}`} />
             </button>
@@ -120,9 +122,17 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
             <span>
-              Backend Disconnected — ensure Uvicorn is running on <strong>127.0.0.1:8000</strong> (run{" "}
-              <code className="bg-rose-900/50 px-1 rounded">run.bat</code> or{" "}
-              <code className="bg-rose-900/50 px-1 rounded">python -m data_rewind.cli serve</code>).
+              {import.meta.env.VITE_API_URL ? (
+                <>
+                  Backend Unavailable — if running on free tier, the instance may be spinning up from sleep (~30–50s). Please click Retry Connection.
+                </>
+              ) : (
+                <>
+                  Backend Disconnected — ensure Uvicorn is running on <strong>127.0.0.1:8000</strong> (run{" "}
+                  <code className="bg-rose-900/50 px-1 rounded">run.bat</code> or{" "}
+                  <code className="bg-rose-900/50 px-1 rounded">python -m data_rewind.cli serve</code>).
+                </>
+              )}
             </span>
           </div>
           <button

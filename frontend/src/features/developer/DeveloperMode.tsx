@@ -38,7 +38,11 @@ const DEFAULT_PIPELINE_JSON = JSON.stringify(
   2
 );
 
-export const DeveloperMode: React.FC = () => {
+interface DeveloperModeProps {
+  isHostedDemo?: boolean;
+}
+
+export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = false }) => {
   const [pipelineJson, setPipelineJson] = useState<string>(DEFAULT_PIPELINE_JSON);
   const [inputRowsJson, setInputRowsJson] = useState<string>(
     JSON.stringify(
@@ -130,6 +134,20 @@ export const DeveloperMode: React.FC = () => {
           </p>
         </div>
       </div>
+
+      {/* Hosted Demo Policy Banner */}
+      {isHostedDemo && (
+        <div className="bg-amber-950/60 border border-amber-800/80 rounded-xl p-4 text-xs font-mono text-amber-200 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold text-amber-100">Hosted Demonstration Environment Notice</p>
+            <p className="text-amber-300/90 leading-relaxed font-sans text-xs">
+              Ad-hoc pipeline execution is restricted in the public demo to protect server resources and maintain zero operating cost.
+              Use the <strong>Demo Sandbox</strong> to evaluate the 4 pre-loaded deterministic scenarios, or clone the repository to run Developer Mode locally.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Error Alert */}
       {error && (

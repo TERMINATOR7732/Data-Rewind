@@ -74,7 +74,9 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeTab === "csv" && <CSVInvestigation />}
+        {activeTab === "csv" && (
+          <CSVInvestigation isHostedDemo={health?.profile === "hosted_demo"} />
+        )}
 
         {activeTab === "investigate" && (
           <InvestigationView
@@ -92,7 +94,9 @@ export const App: React.FC = () => {
 
         {activeTab === "reports" && <ReportStudio initialDossierId={reportDossierId} />}
 
-        {activeTab === "developer" && <DeveloperMode />}
+        {activeTab === "developer" && (
+          <DeveloperMode isHostedDemo={health?.profile === "hosted_demo"} />
+        )}
 
         {activeTab === "settings" && <WorkspaceSettings />}
       </main>

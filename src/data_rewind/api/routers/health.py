@@ -73,7 +73,9 @@ def get_diagnostics() -> dict[str, object]:
         "active_profile": settings.profile,
         "python_runtime": f"{sys.version.split()[0]} ({sys.platform})",
         "duckdb_version": duckdb.__version__,
-        "workspace_root": str(ws_dir),
+        "workspace_root": (
+            "[HOSTED_EPHEMERAL_STORAGE]" if settings.profile == "hosted_demo" else str(ws_dir)
+        ),
         "disk_admission_gate": disk_admission,
         "rss_memory_mib": round(process.memory_info().rss / (1024 * 1024), 2),
         "limits": settings.limits.model_dump(),

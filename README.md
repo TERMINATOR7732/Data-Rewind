@@ -237,19 +237,45 @@ Follow this step-by-step path to experience the core investigation loop:
 
 ---
 
+## Hosted Portfolio Demonstration & Deployment
+
+Data Rewind is architected for zero-operating-cost cloud demonstration (strict ₹0 budget) using free hosting infrastructure:
+
+- **Source Code Repository:** [https://github.com/TERMINATOR7732/Data-Rewind](https://github.com/TERMINATOR7732/Data-Rewind)
+- **Deployment Architecture:**
+  - **Frontend:** Render Static Site (Free Tier, SPA client-side routing via [`render.yaml`](file:///e:/MHT%20CET%20REGISTRATION/BE/Task/DataRewind/render.yaml) and `_redirects`).
+  - **Backend:** Render Web Service (Free Tier, Python 3.12, Uvicorn on `$PORT`, ephemeral `/tmp/data_rewind` storage).
+
+### Hosted Demo Limitations & Safeguards
+To preserve strict zero-operating-cost governance and protect host resources on unauthenticated public infrastructure:
+1. **Demo Sandbox Primary Flow:** The hosted environment operates under `DATA_REWIND_PROFILE=hosted_demo`, providing full access to all 4 canonical scenarios (`SCN-01` to `SCN-04`). DAG execution, row-level diffing, EOD localization, Tri-Run fix verification, and signed forensic reporting are 100% operational.
+2. **Safe Boundary Restrictions:** Custom CSV uploads and ad-hoc pipeline editing are restricted in the public demo (`403 FEATURE_RESTRICTED_IN_DEMO`) to prevent unauthenticated data persistence. Clone the repository for the unrestricted local-first engine with full 50 MB / 500k-row CSV ingestion.
+3. **Ephemeral Session Storage:** In-process DuckDB tables and Parquet checkpoints reside in ephemeral container storage (`/tmp/data_rewind`) and reset upon container restart.
+4. **Free Tier Cold Starts:** On free hosting plans, backend instances spin down after inactivity. Initial request wake-up requires ~30–50 seconds.
+
+### 1-Click Deployment via Render Blueprint
+1. Ensure the repository is published to GitHub (`https://github.com/TERMINATOR7732/Data-Rewind`).
+2. Log into the [Render Dashboard](https://dashboard.render.com/) and click **New** $\to$ **Blueprint**.
+3. Select your `Data-Rewind` repository. Render automatically reads [`render.yaml`](file:///e:/MHT%20CET%20REGISTRATION/BE/Task/DataRewind/render.yaml) and provisions:
+   - `data-rewind-api`: Free Web Service running Python 3.12 + FastAPI + DuckDB.
+   - `data-rewind-ui`: Free Static Site building Vite + React + Tailwind.
+4. Click **Apply** to deploy both services on free tier subdomains.
+
+---
+
 ## Quality Gates & Verification Evidence
 
-All quality gates are enforced locally and verified against Git commit `6dddbf5`:
+All quality gates are enforced locally and verified:
 
 ```powershell
 # 1. Backend Pytest & Branch Coverage (>= 90% threshold)
 pytest -v --cov=data_rewind --cov-fail-under=90
-# Result: 251 passed in 25.41s | 90.66% combined statement + branch coverage
+# Result: 258 passed in 26.15s | 90.66% combined statement + branch coverage
 
 # 2. Ruff Linter & Formatting Checks
 ruff check src tests
 ruff format --check src tests
-# Result: 97 files checked | 0 issues found | 100% clean formatting
+# Result: 98 files checked | 0 issues found | 100% clean formatting
 
 # 3. Mypy Strict Static Type Checking
 mypy src
@@ -265,11 +291,11 @@ python -m data_rewind.cli diagnostics
 
 # 6. Frontend Unit Tests (Vitest)
 npm.cmd --prefix frontend test
-# Result: 17 passed across 6 test files in 65.73s
+# Result: 17 passed across 6 test files
 
 # 7. Frontend Production Type-Check & Bundle Build
 npm.cmd --prefix frontend run build
-# Result: 1,764 modules transformed | built in 9.66s | 0 type errors
+# Result: 1,764 modules transformed | built in 3.87s | 0 type errors
 
 # 8. Playwright Browser E2E Integration Suite (15 User Journeys)
 npm.cmd --prefix frontend run test:e2e

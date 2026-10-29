@@ -76,6 +76,20 @@ def validate_pipeline(request: PipelineValidateRequest) -> PipelineValidateRespo
 @router.post("/execute")
 def execute_pipeline(request: PipelineExecuteRequest) -> dict[str, Any]:
     """Execute declarative pipeline steps and materialize Parquet checkpoints."""
+    settings = APIDependencies.get_settings()
+    if settings.profile == "hosted_demo":
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "FEATURE_RESTRICTED_IN_DEMO",
+                "message": (
+                    "Ad-hoc pipeline execution is restricted in the hosted portfolio demonstration. "
+                    "Use the Demo Sandbox to test full forensic investigations on synthetic datasets, "
+                    "or run Data Rewind locally for full Developer Mode pipeline execution."
+                ),
+                "remediation": "Select one of the 4 demonstration scenarios from Demo Sandbox, or run Data Rewind locally.",
+            },
+        )
     ws_dir = APIDependencies.get_workspace_dir()
     run_id = uuid4()
 

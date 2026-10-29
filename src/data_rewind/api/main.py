@@ -8,6 +8,7 @@ Configured with strict CORS origin guards and standardized error envelopes.
 from __future__ import annotations
 
 import logging
+import os
 from datetime import UTC, datetime
 from typing import Any
 
@@ -43,17 +44,25 @@ def create_app() -> FastAPI:
         openapi_url="/api/openapi.json",
     )
 
-    # Loopback origin security conforming to SPEC-MOD-07 §1.1
+    # Loopback origin security with narrow hosted origin expansion
+    allowed_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
+    custom_cors = os.getenv("DATA_REWIND_CORS_ORIGINS")
+    if custom_cors:
+        for origin in custom_cors.split(","):
+            cleaned = origin.strip().rstrip("/")
+            if cleaned and cleaned not in allowed_origins:
+                allowed_origins.append(cleaned)
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-            "http://localhost:8000",
-            "http://127.0.0.1:8000",
-        ],
+        allow_origins=allowed_origins,
         allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
         allow_credentials=True,
         allow_methods=["*"],

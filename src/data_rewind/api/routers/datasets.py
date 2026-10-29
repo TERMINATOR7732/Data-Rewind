@@ -40,6 +40,20 @@ router = APIRouter(prefix="/datasets", tags=["CSV Datasets"])
 async def upload_dataset(file: UploadFile) -> DatasetUploadResponse:
     """Upload raw CSV file, validate bounds, preserve bytes, and infer schema."""
     settings = APIDependencies.get_settings()
+    if settings.profile == "hosted_demo":
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "FEATURE_RESTRICTED_IN_DEMO",
+                "message": (
+                    "Custom CSV upload is disabled in the hosted portfolio demonstration to prevent "
+                    "unauthenticated data storage and maintain a zero operating cost. Please explore the "
+                    "preloaded scenarios in Demo Sandbox or clone the repository to run the local-first "
+                    "engine with full CSV upload support."
+                ),
+                "remediation": "Select one of the 4 demonstration scenarios from Demo Sandbox, or run Data Rewind locally.",
+            },
+        )
     limits = settings.limits
     raw_dir = APIDependencies.get_raw_inputs_dir()
 

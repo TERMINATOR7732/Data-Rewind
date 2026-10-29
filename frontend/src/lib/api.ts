@@ -20,7 +20,10 @@ import {
   WorkspacePurgeResponse,
 } from "../types/api";
 
-const API_BASE = import.meta.env.VITE_API_URL || "/api/v1";
+const rawApiBase = import.meta.env.VITE_API_URL || "/api/v1";
+const API_BASE = rawApiBase.endsWith("/api/v1")
+  ? rawApiBase
+  : `${rawApiBase.replace(/\/+$/, "")}/api/v1`;
 
 export class ApiClientError extends Error {
   code: string;

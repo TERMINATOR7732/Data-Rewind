@@ -14,9 +14,13 @@ import { TabularNum } from "../../components/TabularNum";
 
 interface CSVInvestigationProps {
   onDatasetReady?: (datasetId: string) => void;
+  isHostedDemo?: boolean;
 }
 
-export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({ onDatasetReady }) => {
+export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
+  onDatasetReady,
+  isHostedDemo = false,
+}) => {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState<boolean>(false);
   const [uploadResult, setUploadResult] = useState<DatasetUploadResponse | null>(null);
@@ -111,6 +115,20 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({ onDatasetRea
           </p>
         </div>
       </div>
+
+      {/* Hosted Demo Policy Banner */}
+      {isHostedDemo && (
+        <div className="bg-amber-950/60 border border-amber-800/80 rounded-xl p-4 text-xs font-mono text-amber-200 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold text-amber-100">Hosted Demonstration Environment Notice</p>
+            <p className="text-amber-300/90 leading-relaxed font-sans text-xs">
+              Custom CSV uploads are restricted in the public demo to prevent unauthenticated data storage and ensure zero operating cost.
+              To evaluate full pipeline diffing, schema inspection, and fix verification, use the <strong>Demo Sandbox</strong> with 4 pre-loaded deterministic scenarios, or clone the repository to run the local-first engine.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Error Banner */}
       {error && (
