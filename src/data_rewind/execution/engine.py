@@ -341,12 +341,14 @@ class PipelineExecutor:
                 clean_alias = str(alias).replace('"', '""')
                 select_parts.append(f'{clean_expr} AS "{clean_alias}"')
 
-            group_clause = (
-                f"GROUP BY {', '.join(f'"{c}"' for c in group_by_cols)}" if group_by_cols else ""
-            )
+            if group_by_cols:
+                group_cols_str = ", ".join(f'"{c}"' for c in group_by_cols)
+                group_clause = f"GROUP BY {group_cols_str}"
+            else:
+                group_clause = ""
+            select_cols_str = ", ".join(select_parts)
             runtime.execute_statement(
-                f'CREATE TABLE "{sid}" AS SELECT {", ".join(select_parts)} '
-                f'FROM "{in_table}" {group_clause}'
+                f'CREATE TABLE "{sid}" AS SELECT {select_cols_str} FROM "{in_table}" {group_clause}'
             )
 
         elif op == OperationType.DEDUPLICATE_ROWS:
@@ -402,9 +404,11 @@ class PipelineExecutor:
 
             cast_cols = list(target_types.keys())
             cast_parts = [f'CAST("{col}" AS {target_types[col]}) AS "{col}"' for col in cast_cols]
-            exclude_clause = f"EXCLUDE ({', '.join(f'"{c}"' for c in cast_cols)})"
+            cast_cols_str = ", ".join(f'"{c}"' for c in cast_cols)
+            cast_parts_str = ", ".join(cast_parts)
+            exclude_clause = f"EXCLUDE ({cast_cols_str})"
             runtime.execute_statement(
-                f'CREATE TABLE "{sid}" AS SELECT * {exclude_clause}, {", ".join(cast_parts)} '
+                f'CREATE TABLE "{sid}" AS SELECT * {exclude_clause}, {cast_parts_str} '
                 f'FROM "{in_table}"'
             )
 
