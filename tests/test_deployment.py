@@ -11,6 +11,7 @@ Verifies:
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -222,6 +223,11 @@ def test_vercel_entrypoint_execution(tmp_path: Path, monkeypatch: pytest.MonkeyP
     demo_dir = tmp_path / "vercel_test_data"
     monkeypatch.setenv("DATA_REWIND_DATA_DIR", str(demo_dir))
     monkeypatch.setenv("DATA_REWIND_PROFILE", "hosted_demo")
+
+    # Ensure repository root is on sys.path for importing api.index
+    repo_root = Path(__file__).resolve().parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
 
     # Import the Vercel entrypoint
     from api.index import app as vercel_app
