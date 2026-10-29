@@ -68,3 +68,6 @@ frontend/.vite/
 frontend/playwright-report/
 frontend/test-results/
 *.tsbuildinfo
+
+.vercel
+.env*

@@ -241,6 +241,7 @@ Follow this step-by-step path to experience the core investigation loop:
 
 Data Rewind is architected for zero-operating-cost cloud demonstration (strict ₹0 budget) using free hosting infrastructure:
 
+- **Live Production URL:** [https://data-rewind.vercel.app](https://data-rewind.vercel.app)
 - **Source Code Repository:** [https://github.com/TERMINATOR7732/Data-Rewind](https://github.com/TERMINATOR7732/Data-Rewind)
 - **Primary Hosting Target:** **Vercel** (Unified Single-Origin Serverless Full-Stack: Vite Frontend + Python FastAPI Serverless Functions).
 - **Alternative Hosting Target:** **Render Blueprint** (Dual-Service Free Tier: Static Site + Web Service via [`render.yaml`](file:///e:/MHT%20CET%20REGISTRATION/BE/Task/DataRewind/render.yaml)).

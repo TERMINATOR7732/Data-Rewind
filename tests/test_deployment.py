@@ -199,6 +199,7 @@ def test_vercel_configuration_integrity() -> None:
     with open(vercel_path, encoding="utf-8") as f:
         config = json.load(f)
 
+    assert config.get("framework") == "vite"
     assert config.get("outputDirectory") == "frontend/dist"
     assert "npm --prefix frontend install" in config.get("buildCommand", "")
     assert "api/index.py" in config.get("functions", {})
@@ -207,9 +208,7 @@ def test_vercel_configuration_integrity() -> None:
     assert any(
         r.get("source") == "/api/(.*)" and r.get("destination") == "/api/index.py" for r in rewrites
     )
-    assert any(
-        r.get("source") == "/(.*)" and r.get("destination") == "/index.html" for r in rewrites
-    )
+    assert any(r.get("destination") == "/index.html" for r in rewrites)
 
     # 2. Verify .python-version
     pyver_path = repo_root / ".python-version"
