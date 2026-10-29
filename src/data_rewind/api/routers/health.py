@@ -5,7 +5,7 @@ Conforms to SPEC-MOD-07 §3.1 and SPEC-MOD-09 §1.
 
 from __future__ import annotations
 
-import os
+import shutil
 import sys
 
 import duckdb
@@ -26,19 +26,8 @@ def get_health() -> HealthResponse:
     settings = APIDependencies.get_settings()
     ws_dir = APIDependencies.get_workspace_dir()
 
-    # Calculate free disk space in MB
-    try:
-        free_bytes = os.statvfs(str(ws_dir)).f_bavail * os.statvfs(str(ws_dir)).f_frsize  # type: ignore[attr-defined]
-        free_mb = free_bytes / 1_000_000
-    except AttributeError:
-        # Windows fallback
-        import ctypes
-
-        free_bytes_int = ctypes.c_ulonglong(0)
-        ctypes.windll.kernel32.GetDiskFreeSpaceExW(
-            str(ws_dir), None, None, ctypes.byref(free_bytes_int)
-        )
-        free_mb = free_bytes_int.value / 1_000_000
+    # Calculate free disk space in MB (cross-platform via standard library)
+    free_mb = shutil.disk_usage(str(ws_dir)).free / 1_000_000
 
     # Calculate process RSS in MiB
     process = psutil.Process()

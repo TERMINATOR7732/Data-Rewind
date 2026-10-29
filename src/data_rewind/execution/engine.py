@@ -308,13 +308,18 @@ class PipelineExecutor:
                 )
 
             # Deduplicate schema column names for clean join
-            runtime.execute_statement(
-                f'CREATE TABLE "{sid}" AS SELECT t1.*, t2.* EXCLUDE ({", ".join(f'"{k}"' for k in join_keys)}) '
-                f'FROM "{left_table}" AS t1 {join_type} JOIN "{right_table}" AS t2 ON {cond}'
-                if join_keys
-                else f'CREATE TABLE "{sid}" AS SELECT t1.*, t2.* '
-                f'FROM "{left_table}" AS t1 {join_type} JOIN "{right_table}" AS t2 ON {cond}'
-            )
+            if join_keys:
+                exclude_clause = ", ".join(f'"{k}"' for k in join_keys)
+                join_sql = (
+                    f'CREATE TABLE "{sid}" AS SELECT t1.*, t2.* EXCLUDE ({exclude_clause}) '
+                    f'FROM "{left_table}" AS t1 {join_type} JOIN "{right_table}" AS t2 ON {cond}'
+                )
+            else:
+                join_sql = (
+                    f'CREATE TABLE "{sid}" AS SELECT t1.*, t2.* '
+                    f'FROM "{left_table}" AS t1 {join_type} JOIN "{right_table}" AS t2 ON {cond}'
+                )
+            runtime.execute_statement(join_sql)
 
         elif op == OperationType.AGGREGATE_GROUP_BY:
             in_table = inputs[0]
