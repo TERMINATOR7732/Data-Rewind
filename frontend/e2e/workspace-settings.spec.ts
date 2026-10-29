@@ -1,6 +1,12 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Workspace Settings & Purge Journeys', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('data_rewind_tour_completed', 'true');
+    });
+  });
+
   test('inspects storage metrics and safely exercises application-managed purge', async ({ page }) => {
     await page.goto('/');
 

@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Forensic Report Studio Export Journeys', () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('data_rewind_tour_completed', 'true');
+    });
     // Generate an investigation and verification on SCN-01 first
     await page.goto('/');
     await page.getByRole('button', { name: 'Demo Sandbox' }).click();

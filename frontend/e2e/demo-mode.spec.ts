@@ -1,6 +1,12 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Demo Mode End-to-End Journeys', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('data_rewind_tour_completed', 'true');
+    });
+  });
+
   test('discovers pre-loaded scenarios SCN-01 to SCN-04 and renders metadata', async ({ page }) => {
     await page.goto('/');
 

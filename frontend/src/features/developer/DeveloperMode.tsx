@@ -123,7 +123,7 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-xl">
         <div className="max-w-3xl flex flex-col gap-2">
           <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-emerald-400">
-            <Code2 className="w-4 h-4" /> Developer Mode & Declarative DAGs (SPEC-MOD-01 §3)
+            <Code2 className="w-4 h-4" /> Developer Mode & Declarative DAGs
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-100 sm:text-3xl">
             Declarative Pipeline Manifest Workbench
@@ -142,8 +142,8 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
           <div className="space-y-1">
             <p className="font-semibold text-amber-100">Hosted Demonstration Environment Notice</p>
             <p className="text-amber-300/90 leading-relaxed font-sans text-xs">
-              Ad-hoc pipeline execution is restricted in the public demo to protect server resources and maintain zero operating cost.
-              Use the <strong>Demo Sandbox</strong> to evaluate the 4 pre-loaded deterministic scenarios, or clone the repository to run Developer Mode locally.
+              Ad-hoc pipeline execution is disabled in this public demonstration environment.
+              Use the <strong>Demo Sandbox</strong> to evaluate the 4 pre-loaded deterministic scenarios, or run Developer Mode locally for custom declarative manifests.
             </p>
           </div>
         </div>

@@ -44,7 +44,7 @@ export const VerificationHub: React.FC<VerificationHubProps> = ({
           <div className="flex items-center gap-2">
             <Scale className="w-4 h-4 text-emerald-400" />
             <span className="text-xs font-mono uppercase text-emerald-400 tracking-wider">
-              Tri-Run Fix Verification Hub (SPEC-MOD-05)
+              Tri-Run Fix Verification Hub
             </span>
           </div>
           <h1 className="text-2xl font-bold text-zinc-100">{verification.title}</h1>

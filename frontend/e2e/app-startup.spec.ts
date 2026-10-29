@@ -1,6 +1,12 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Application Startup & Shell Journeys', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('data_rewind_tour_completed', 'true');
+    });
+  });
+
   test('renders application shell, branding, and navigates across tabs', async ({ page }) => {
     await page.goto('http://localhost:5173');
 
@@ -14,7 +20,7 @@ test.describe('Application Startup & Shell Journeys', () => {
 
     // 3. Navigation tabs verification
     const tabs = [
-      { name: 'Demo Sandbox', heading: 'Pre-loaded Forensic Pipeline Regressions' },
+      { name: 'Demo Sandbox', heading: 'Find where your data pipeline went wrong.' },
       { name: 'CSV Ingestion', heading: 'Ingest Raw CSV & Inspect Schemas' },
       { name: 'Developer Mode', heading: 'Declarative Pipeline Manifest Workbench' },
       { name: 'Workspace', heading: 'Workspace Storage & Data Privacy' },

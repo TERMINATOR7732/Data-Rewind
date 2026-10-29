@@ -52,7 +52,7 @@ export const WorkspaceSettings: React.FC = () => {
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-xl">
         <div className="max-w-3xl flex flex-col gap-2">
           <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-emerald-400">
-            <HardDrive className="w-4 h-4" /> Local Storage & Workspace Retention (SPEC-MOD-06 §3)
+            <HardDrive className="w-4 h-4" /> Local Storage & Workspace Retention
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-100 sm:text-3xl">
             Workspace Storage & Data Privacy

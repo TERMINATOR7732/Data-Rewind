@@ -104,7 +104,7 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-xl">
         <div className="max-w-3xl flex flex-col gap-2">
           <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-emerald-400">
-            <FileSpreadsheet className="w-4 h-4" /> CSV Ingestion & Schema Inspector (SPEC-MOD-01/08)
+            <FileSpreadsheet className="w-4 h-4" /> CSV Ingestion & Schema Inspector
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-100 sm:text-3xl">
             Ingest Raw CSV & Inspect Schemas
@@ -123,8 +123,8 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
           <div className="space-y-1">
             <p className="font-semibold text-amber-100">Hosted Demonstration Environment Notice</p>
             <p className="text-amber-300/90 leading-relaxed font-sans text-xs">
-              Custom CSV uploads are restricted in the public demo to prevent unauthenticated data storage and ensure zero operating cost.
-              To evaluate full pipeline diffing, schema inspection, and fix verification, use the <strong>Demo Sandbox</strong> with 4 pre-loaded deterministic scenarios, or clone the repository to run the local-first engine.
+              Custom CSV uploads are disabled in this public demonstration environment.
+              To ingest custom datasets and evaluate live schema inspection, run the local Data Rewind desktop engine, or explore the 4 pre-loaded deterministic scenarios in the <strong>Demo Sandbox</strong>.
             </p>
           </div>
         </div>

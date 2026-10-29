@@ -3,27 +3,55 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: dark;
+  }
+
   body {
-    @apply bg-zinc-950 text-zinc-100 font-sans;
+    @apply bg-zinc-950 text-zinc-100 font-sans antialiased text-sm;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Consistent interactive focus styles for accessibility */
+  :focus-visible {
+    @apply outline-none ring-2 ring-emerald-500/70 ring-offset-2 ring-offset-zinc-950;
   }
 }
 
+/* Tabular numerals for alignment */
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
 
 /* Custom scrollbars for data tables and diffs */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: #09090b;
 }
 ::-webkit-scrollbar-thumb {
   background: #27272a;
-  border-radius: 4px;
+  border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #3f3f46;
+}
+
+/* Tour highlight pulse */
+@keyframes tour-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.8);
+  }
+}
+
+.tour-target-active {
+  position: relative;
+  z-index: 60;
+  animation: tour-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  border-color: #10b981 !important;
 }

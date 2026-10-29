@@ -1,6 +1,12 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Tri-Run Fix Verification Hub Journeys', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('data_rewind_tour_completed', 'true');
+    });
+  });
+
   test('verifies dual-axis evaluation, evidence items, and transitions to report studio', async ({ page }) => {
     await page.goto('/');
 

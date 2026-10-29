@@ -7,8 +7,12 @@ import { VerificationHub } from "./features/verification/VerificationHub";
 import { ReportStudio } from "./features/reports/ReportStudio";
 import { DeveloperMode } from "./features/developer/DeveloperMode";
 import { WorkspaceSettings } from "./features/settings/WorkspaceSettings";
+import { GuidedTour } from "./components/GuidedTour";
+import { WelcomeModal } from "./components/WelcomeModal";
 import { api } from "./lib/api";
 import { ForensicDossier, HealthResponse, Investigation } from "./types/api";
+
+const TOUR_STORAGE_KEY = "data_rewind_tour_completed";
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<WorkbenchTab>("demo");
@@ -19,6 +23,10 @@ export const App: React.FC = () => {
   const [currentInvestigation, setCurrentInvestigation] = useState<Investigation | null>(null);
   const [currentDossier, setCurrentDossier] = useState<ForensicDossier | null>(null);
   const [reportDossierId, setReportDossierId] = useState<string | null>(null);
+
+  // Onboarding Guided Tour state
+  const [showWelcome, setShowWelcome] = useState<boolean>(false);
+  const [showTour, setShowTour] = useState<boolean>(false);
 
   const fetchHealth = async () => {
     try {
@@ -37,6 +45,32 @@ export const App: React.FC = () => {
     const interval = setInterval(fetchHealth, 15000);
     return () => clearInterval(interval);
   }, []);
+
+  // Check if first-time visitor
+  useEffect(() => {
+    try {
+      const completed = localStorage.getItem(TOUR_STORAGE_KEY);
+      if (!completed) {
+        setShowWelcome(true);
+      }
+    } catch {
+      // LocalStorage access may fail in restricted sandboxes; gracefully ignore
+    }
+  }, []);
+
+  const handleStartTour = () => {
+    setShowWelcome(false);
+    setShowTour(true);
+  };
+
+  const handleDismissWelcome = () => {
+    try {
+      localStorage.setItem(TOUR_STORAGE_KEY, "true");
+    } catch {
+      // Ignore storage restrictions
+    }
+    setShowWelcome(false);
+  };
 
   // Handlers for cross-screen transitions
   const handleInvestigationLoaded = (inv: Investigation) => {
@@ -63,6 +97,7 @@ export const App: React.FC = () => {
         health={health}
         healthLoading={healthLoading}
         onRefreshHealth={fetchHealth}
+        onStartTour={() => setShowTour(true)}
       />
 
       {/* Main Workbench Body */}
@@ -71,6 +106,7 @@ export const App: React.FC = () => {
           <DemoHub
             onInvestigationLoaded={handleInvestigationLoaded}
             onDossierLoaded={handleDossierLoaded}
+            onStartTour={() => setShowTour(true)}
           />
         )}
 
@@ -101,19 +137,34 @@ export const App: React.FC = () => {
         {activeTab === "settings" && <WorkspaceSettings />}
       </main>
 
-      {/* Local-First Footer */}
-      <footer className="border-t border-zinc-850 bg-zinc-900/60 py-4 px-6 text-xs font-mono text-zinc-500 flex flex-col sm:flex-row items-center justify-between gap-2">
+      {/* Professional Engineering Footer */}
+      <footer className="border-t border-zinc-800/80 bg-zinc-900/60 py-4 px-6 text-xs font-mono text-zinc-500 flex flex-col sm:flex-row items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span>DATA REWIND • Engineering Forensic Workbench</span>
+          <span>DATA REWIND • Forensic Pipeline Workbench</span>
           <span>•</span>
-          <span className="text-emerald-500/80">100% Local-First (₹0 Budget)</span>
+          <span className="text-emerald-400/90 font-medium">Offline-First Evidence Engine</span>
         </div>
         <div className="flex items-center gap-3 text-zinc-400">
-          <span>Loopback: 127.0.0.1:8000</span>
-          <span>•</span>
           <span>Zero External Telemetry</span>
+          <span>•</span>
+          <span>Local Parquet & SQLite WAL</span>
         </div>
       </footer>
+
+      {/* First-Time Welcome Modal */}
+      <WelcomeModal
+        isOpen={showWelcome}
+        onStartTour={handleStartTour}
+        onDismiss={handleDismissWelcome}
+      />
+
+      {/* Guided Interactive Tour */}
+      <GuidedTour
+        activeTab={activeTab}
+        onNavigateTab={setActiveTab}
+        isOpen={showTour}
+        onClose={() => setShowTour(false)}
+      />
     </div>
   );
 };

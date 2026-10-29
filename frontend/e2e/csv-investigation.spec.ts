@@ -6,6 +6,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 test.describe('CSV Ingestion & Schema Inspector Journeys', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('data_rewind_tour_completed', 'true');
+    });
+  });
+
   test('uploads valid CSV fixture, verifies metadata and schema preview', async ({ page }) => {
     await page.goto('/');
 

@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Comparison & Lineage Canvas Journeys', () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('data_rewind_tour_completed', 'true');
+    });
     // Navigate and run SCN-01 to populate active investigation
     await page.goto('/');
     await page.getByRole('button', { name: 'Demo Sandbox' }).click();

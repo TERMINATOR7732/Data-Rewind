@@ -138,22 +138,24 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col gap-6 font-sans">
       {/* Investigation Top Banner */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <GitCompare className="w-4 h-4 text-emerald-400" />
-            <span className="text-xs font-mono uppercase text-emerald-400 tracking-wider">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 sm:p-7 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6 min-w-0">
+        <div className="space-y-2 min-w-0">
+          <div className="flex items-center gap-2">
+            <GitCompare className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <span className="text-xs font-mono uppercase text-emerald-400 tracking-wider font-semibold">
               Forensic Investigation Dossier
             </span>
           </div>
-          <h1 className="text-2xl font-bold text-zinc-100">{currentInvestigation.title}</h1>
-          <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-zinc-400 mt-2">
+          <h1 className="text-xl sm:text-2xl font-bold text-zinc-100 truncate" title={currentInvestigation.title}>
+            {currentInvestigation.title}
+          </h1>
+          <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-zinc-400 pt-1">
             <span>
-              Baseline $R_0$: <code className="text-zinc-200">{currentInvestigation.baseline_run_id.slice(0, 8)}</code>
+              Baseline Run: <code className="text-zinc-200">{currentInvestigation.baseline_run_id.slice(0, 8)}</code>
             </span>
             <span>•</span>
             <span>
-              Target $R_1$: <code className="text-zinc-200">{currentInvestigation.target_run_id.slice(0, 8)}</code>
+              Target Run: <code className="text-zinc-200">{currentInvestigation.target_run_id.slice(0, 8)}</code>
             </span>
             <span>•</span>
             <span>
@@ -163,18 +165,21 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
         </div>
 
         {/* EOD Highlight Card */}
-        <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 flex items-center gap-4 min-w-[280px]">
-          <div className="p-2.5 rounded-lg bg-amber-950/80 border border-amber-800 text-amber-400 flex items-center justify-center">
-            <AlertTriangle className="w-6 h-6 animate-pulse" />
+        <div
+          data-tour="eod-card"
+          className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 flex items-center gap-4 min-w-0 sm:min-w-[280px] shadow-inner"
+        >
+          <div className="p-2.5 rounded-lg bg-amber-950/80 border border-amber-800 text-amber-400 flex items-center justify-center flex-shrink-0">
+            <AlertTriangle className="w-5 h-5 animate-pulse" />
           </div>
-          <div>
-            <span className="text-[10px] font-mono uppercase text-zinc-500 font-bold block">
+          <div className="min-w-0">
+            <span className="text-[10px] font-mono uppercase text-zinc-400 font-bold block truncate">
               Earliest Observable Divergence
             </span>
-            <span className="text-sm font-mono font-bold text-amber-300">
+            <span className="text-sm font-mono font-bold text-amber-300 block truncate" title={eod_result.primary_eod_step || "None"}>
               {eod_result.primary_eod_step || "None (Identical)"}
             </span>
-            <span className="text-xs text-zinc-400 block mt-0.5">
+            <span className="text-xs text-zinc-400 block mt-0.5 truncate">
               Category: <strong className="text-zinc-200">{eod_result.divergence_category}</strong>
             </span>
           </div>
@@ -183,7 +188,7 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
 
       {/* Error Alert */}
       {error && (
-        <div className="bg-rose-950/80 border border-rose-800 rounded-lg p-3 text-xs font-mono text-rose-200 flex items-center justify-between">
+        <div className="bg-rose-950/80 border border-rose-800 rounded-xl p-4 text-xs font-mono text-rose-200 flex items-center justify-between">
           <span>{error}</span>
           <button onClick={() => setError(null)} className="font-bold text-rose-400 hover:text-rose-200">
             Dismiss
@@ -202,7 +207,7 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
 
       {/* Bottom Grid: Row Diff Viewer & Forensic Evidence Panel */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 min-w-0">
           <DiffTable
             stepId={selectedStepId || "unknown"}
             diffSummary={diffSummary}
@@ -212,7 +217,7 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
           />
         </div>
 
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 min-w-0" data-tour="evidence-panel">
           <EvidencePanel investigation={currentInvestigation} selectedStepId={selectedStepId} />
         </div>
       </div>
