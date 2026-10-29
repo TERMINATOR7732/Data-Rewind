@@ -3,6 +3,7 @@
 from data_rewind.core.integrity.hashing import (
     compute_content_hash,
     compute_multiset_hash,
+    compute_pipeline_definition_hash,
     hash_canonical_row,
     verify_content_integrity,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "canonical_row_bytes",
     "compute_content_hash",
     "compute_multiset_hash",
+    "compute_pipeline_definition_hash",
     "hash_canonical_row",
     "normalize_value",
     "validate_safe_path",

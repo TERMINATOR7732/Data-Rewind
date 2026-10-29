@@ -1,6 +1,6 @@
 {
   "suite_title": "Data Rewind End-to-End Performance & Memory Benchmark Suite",
-  "generated_at_utc": "2026-10-28T09:32:36.011192+00:00",
+  "generated_at_utc": "2026-10-29T09:43:38.540683+00:00",
   "system_info": {
     "os_platform": "Windows",
     "os_release": "10",
@@ -15,13 +15,13 @@
     {
       "name": "csv_ingestion_1k",
       "category": "CSV Ingestion",
-      "elapsed_ms": 132.75,
-      "peak_rss_mib": 62.8,
-      "delta_rss_mib": 23.95,
+      "elapsed_ms": 127.55,
+      "peak_rss_mib": 62.95,
+      "delta_rss_mib": 24.05,
       "details": {
         "row_count": 1000,
         "byte_size": 38358,
-        "throughput_rows_sec": 7533.1,
+        "throughput_rows_sec": 7839.8,
         "rows_verified": true
       },
       "passed_budget": true
@@ -29,13 +29,13 @@
     {
       "name": "csv_ingestion_10k",
       "category": "CSV Ingestion",
-      "elapsed_ms": 80.72,
-      "peak_rss_mib": 64.48,
-      "delta_rss_mib": 12.0,
+      "elapsed_ms": 78.44,
+      "peak_rss_mib": 64.86,
+      "delta_rss_mib": 12.43,
       "details": {
         "row_count": 10000,
         "byte_size": 393228,
-        "throughput_rows_sec": 123882.4,
+        "throughput_rows_sec": 127487.0,
         "rows_verified": true
       },
       "passed_budget": true
@@ -43,13 +43,13 @@
     {
       "name": "csv_ingestion_50k",
       "category": "CSV Ingestion",
-      "elapsed_ms": 110.82,
-      "peak_rss_mib": 66.73,
-      "delta_rss_mib": 14.17,
+      "elapsed_ms": 110.53,
+      "peak_rss_mib": 66.61,
+      "delta_rss_mib": 14.09,
       "details": {
         "row_count": 50000,
         "byte_size": 2010428,
-        "throughput_rows_sec": 451176.4,
+        "throughput_rows_sec": 452384.3,
         "rows_verified": true
       },
       "passed_budget": true
@@ -57,9 +57,9 @@
     {
       "name": "keyed_comparison_10k",
       "category": "Tabular Keyed Comparison",
-      "elapsed_ms": 70.14,
-      "peak_rss_mib": 71.24,
-      "delta_rss_mib": 7.21,
+      "elapsed_ms": 68.78,
+      "peak_rss_mib": 70.91,
+      "delta_rss_mib": 7.18,
       "details": {
         "row_count": 10000,
         "col_count": 10,
@@ -74,9 +74,9 @@
     {
       "name": "keyed_comparison_50k",
       "category": "Tabular Keyed Comparison",
-      "elapsed_ms": 148.05,
-      "peak_rss_mib": 91.91,
-      "delta_rss_mib": 12.27,
+      "elapsed_ms": 151.18,
+      "peak_rss_mib": 91.73,
+      "delta_rss_mib": 11.96,
       "details": {
         "row_count": 50000,
         "col_count": 10,
@@ -91,9 +91,9 @@
     {
       "name": "keyed_comparison_100k",
       "category": "Tabular Keyed Comparison",
-      "elapsed_ms": 248.11,
-      "peak_rss_mib": 115.04,
-      "delta_rss_mib": 20.66,
+      "elapsed_ms": 248.45,
+      "peak_rss_mib": 114.69,
+      "delta_rss_mib": 21.68,
       "details": {
         "row_count": 100000,
         "col_count": 10,
@@ -108,9 +108,9 @@
     {
       "name": "keyed_comparison_500k",
       "category": "Tabular Keyed Comparison",
-      "elapsed_ms": 623.77,
-      "peak_rss_mib": 301.31,
-      "delta_rss_mib": 104.28,
+      "elapsed_ms": 605.14,
+      "peak_rss_mib": 301.88,
+      "delta_rss_mib": 103.86,
       "details": {
         "row_count": 500000,
         "col_count": 10,
@@ -125,9 +125,9 @@
     {
       "name": "keyless_multiset_10k",
       "category": "Tabular Keyless Comparison",
-      "elapsed_ms": 125.91,
-      "peak_rss_mib": 82.48,
-      "delta_rss_mib": 9.95,
+      "elapsed_ms": 128.58,
+      "peak_rss_mib": 82.45,
+      "delta_rss_mib": 10.0,
       "details": {
         "row_count": 10000,
         "reordered": true,
@@ -143,16 +143,16 @@
     {
       "name": "pipeline_execution_dag",
       "category": "Full Pipeline Execution",
-      "elapsed_ms": 57.32,
-      "peak_rss_mib": 71.38,
-      "delta_rss_mib": 7.18,
+      "elapsed_ms": 58.2,
+      "peak_rss_mib": 72.2,
+      "delta_rss_mib": 7.51,
       "details": {
         "step_count": 3,
         "total_rows_processed": 10,
         "step_latencies_ms": {
-          "ingest_orders": 5.38,
-          "filter_completed": 5.37,
-          "aggregate_revenue": 5.28
+          "ingest_orders": 4.69,
+          "filter_completed": 5.97,
+          "aggregate_revenue": 5.43
         },
         "checkpoints_written": 3
       },
@@ -161,9 +161,9 @@
     {
       "name": "manifest_replay_and_tamper_detection",
       "category": "Historical Replay & Manifest Verification",
-      "elapsed_ms": 50.07,
-      "peak_rss_mib": 74.07,
-      "delta_rss_mib": 9.15,
+      "elapsed_ms": 48.53,
+      "peak_rss_mib": 75.84,
+      "delta_rss_mib": 11.81,
       "details": {
         "clean_replay_outcome": "REPRODUCIBLE",
         "reproducible_verified": true,
@@ -175,9 +175,9 @@
     {
       "name": "tri_run_verification_clean",
       "category": "Tri-Run Fix Verification",
-      "elapsed_ms": 513.35,
-      "peak_rss_mib": 71.33,
-      "delta_rss_mib": 6.46,
+      "elapsed_ms": 524.07,
+      "peak_rss_mib": 71.9,
+      "delta_rss_mib": 7.77,
       "details": {
         "verdict": "VERIFIED_CLEAN",
         "expected_verdict": "VERIFIED_CLEAN",
@@ -189,9 +189,9 @@
     {
       "name": "tri_run_verification_unresolved",
       "category": "Tri-Run Fix Verification",
-      "elapsed_ms": 512.06,
-      "peak_rss_mib": 71.39,
-      "delta_rss_mib": 1.75,
+      "elapsed_ms": 500.82,
+      "peak_rss_mib": 72.45,
+      "delta_rss_mib": 1.4,
       "details": {
         "verdict": "REGRESSION_UNRESOLVED",
         "expected_verdict": "REGRESSION_UNRESOLVED",
@@ -203,18 +203,18 @@
   ],
   "budget_checks": {
     "max_peak_rss_limit_512_mib": {
-      "actual_peak_rss_mib": 301.31,
+      "actual_peak_rss_mib": 301.88,
       "limit_mib": 512.0,
       "passed": true
     },
     "target_500k_time_1500_ms": {
-      "actual_ms": 623.77,
+      "actual_ms": 605.14,
       "target_ms": 1500.0,
       "passed": true,
       "applicable": true
     },
     "target_500k_delta_rss_120_mib": {
-      "actual_delta_rss_mib": 104.28,
+      "actual_delta_rss_mib": 103.86,
       "limit_mib": 120.0,
       "passed": true,
       "applicable": true

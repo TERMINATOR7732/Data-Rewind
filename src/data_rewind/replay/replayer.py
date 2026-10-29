@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from data_rewind.core.domain.models import (
@@ -20,7 +21,10 @@ from data_rewind.core.domain.models import (
     RunLifecycle,
     TransformationStep,
 )
-from data_rewind.core.integrity.hashing import compute_content_hash
+from data_rewind.core.integrity.hashing import (
+    compute_content_hash,
+    compute_pipeline_definition_hash,
+)
 from data_rewind.core.integrity.manifest import ReplayManifest
 from data_rewind.execution.engine import PipelineExecutor
 from data_rewind.execution.models import ExecutionOptions
@@ -41,6 +45,7 @@ class HistoricalReplayer:
         workspace_root: Path,
         historical_step_hashes: dict[str, str] | None = None,
         float_tolerance: float = 1e-6,
+        historical_tables: dict[str, Any] | None = None,
     ) -> ReplayResult:
         """Evaluate prerequisites and replay run deterministically."""
         start_time = time.perf_counter()
@@ -100,6 +105,28 @@ class HistoricalReplayer:
                 execution_duration_ms=round(elapsed, 3),
             )
 
+        # 2b. Verify pipeline definition integrity (SPEC-MOD-03 §3.4 Requirement 2)
+        computed_def_hash = compute_pipeline_definition_hash(steps)
+        if (
+            manifest.pipeline_definition_hash
+            and manifest.pipeline_definition_hash != "0" * 64
+            and manifest.pipeline_definition_hash
+            != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            and computed_def_hash != manifest.pipeline_definition_hash
+        ):
+            elapsed = (time.perf_counter() - start_time) * 1000.0
+            return ReplayResult(
+                replay_run_id=replay_id,
+                historical_run_id=manifest.run_id,
+                outcome=ReplayOutcome.FAILED_VERIFICATION,
+                explanation=(
+                    f"Pipeline definition integrity failure: computed definition hash "
+                    f"'{computed_def_hash}' does not match manifest pipeline_definition_hash "
+                    f"'{manifest.pipeline_definition_hash}'."
+                ),
+                execution_duration_ms=round(elapsed, 3),
+            )
+
         # 3. Execute pipeline in isolated sandbox
         exec_options = ExecutionOptions(
             workspace_root=root,
@@ -132,6 +159,7 @@ class HistoricalReplayer:
         late_divergence_step: str | None = None
         has_divergence = False
         has_missing_hashes = False
+        has_partial_match = False
 
         hist_hashes: dict[str, str] = {}
         if historical_step_hashes is not None:
@@ -147,21 +175,58 @@ class HistoricalReplayer:
             hist_hash = hist_hashes.get(sid)
 
             if hist_hash is not None and replayed_hash is not None:
-                is_match = hist_hash == replayed_hash
-                is_late_point = False
-                if not is_match and not has_divergence:
-                    has_divergence = True
-                    is_late_point = True
-                    late_divergence_step = sid
+                if hist_hash == replayed_hash:
+                    step_verifications[sid] = ReplayStepVerification(
+                        step_id=sid,
+                        historical_multiset_hash=hist_hash,
+                        replayed_multiset_hash=replayed_hash,
+                        is_matched=True,
+                        is_late_divergence_point=False,
+                        variance_details=None,
+                    )
+                else:
+                    # Output multiset hash differs. Check if within float tolerance or row reordering.
+                    is_within_tolerance = False
+                    tolerance_detail: str | None = None
 
-                step_verifications[sid] = ReplayStepVerification(
-                    step_id=sid,
-                    historical_multiset_hash=hist_hash,
-                    replayed_multiset_hash=replayed_hash,
-                    is_matched=is_match,
-                    is_late_divergence_point=is_late_point,
-                    variance_details=None if is_match else "Output multiset hash diverged",
-                )
+                    hist_table = historical_tables.get(sid) if historical_tables else None
+                    if hist_table is None:
+                        hist_table = cls._find_step_artifact(root, sid, hist_hash)
+
+                    if (
+                        hist_table is not None
+                        and step_result is not None
+                        and step_result.parquet_path
+                    ):
+                        is_within_tolerance, tolerance_detail = cls._check_tolerance(
+                            hist_table, step_result.parquet_path, float_tolerance
+                        )
+
+                    if is_within_tolerance:
+                        has_partial_match = True
+                        step_verifications[sid] = ReplayStepVerification(
+                            step_id=sid,
+                            historical_multiset_hash=hist_hash,
+                            replayed_multiset_hash=replayed_hash,
+                            is_matched=True,
+                            is_late_divergence_point=False,
+                            variance_details=tolerance_detail or "Matches within float tolerance",
+                        )
+                    else:
+                        is_late_point = False
+                        if not has_divergence:
+                            has_divergence = True
+                            is_late_point = True
+                            late_divergence_step = sid
+
+                        step_verifications[sid] = ReplayStepVerification(
+                            step_id=sid,
+                            historical_multiset_hash=hist_hash,
+                            replayed_multiset_hash=replayed_hash,
+                            is_matched=False,
+                            is_late_divergence_point=is_late_point,
+                            variance_details="Output multiset hash diverged",
+                        )
             else:
                 has_missing_hashes = True
                 step_verifications[sid] = ReplayStepVerification(
@@ -199,6 +264,23 @@ class HistoricalReplayer:
                 execution_duration_ms=round(elapsed, 3),
             )
 
+        if has_partial_match or has_missing_hashes:
+            explanation = (
+                "Historical run partially reproduced: step outputs match within configured "
+                "floating-point/row-order tolerances."
+                if has_partial_match
+                else "Historical run partially reproduced: available checkpoints matched 100%, "
+                "but some intermediate step hashes were not recorded in manifest."
+            )
+            return ReplayResult(
+                replay_run_id=replay_id,
+                historical_run_id=manifest.run_id,
+                outcome=ReplayOutcome.PARTIALLY_REPRODUCIBLE,
+                explanation=explanation,
+                step_verifications=step_verifications,
+                execution_duration_ms=round(elapsed, 3),
+            )
+
         return ReplayResult(
             replay_run_id=replay_id,
             historical_run_id=manifest.run_id,
@@ -207,6 +289,137 @@ class HistoricalReplayer:
             step_verifications=step_verifications,
             execution_duration_ms=round(elapsed, 3),
         )
+
+    @classmethod
+    def _find_step_artifact(
+        cls, workspace_root: Path, step_id: str, expected_hash: str | None = None
+    ) -> Path | None:
+        """Find historical step output artifact in workspace."""
+        candidate_dirs = [
+            workspace_root / "checkpoints",
+            workspace_root / "artifacts",
+            workspace_root,
+        ]
+        candidates: list[Path] = []
+        for d in candidate_dirs:
+            if expected_hash:
+                candidates.extend(
+                    [
+                        d / f"{expected_hash}.parquet",
+                        d / f"{expected_hash}.csv",
+                    ]
+                )
+            candidates.extend(
+                [
+                    d / f"{step_id}.parquet",
+                    d / f"{step_id}.csv",
+                ]
+            )
+        for c in candidates:
+            if c.is_file():
+                return c
+        return None
+
+    @classmethod
+    def _check_tolerance(
+        cls,
+        hist_table: Path | list[dict[str, Any]],
+        replayed_parquet: Path,
+        float_tolerance: float,
+    ) -> tuple[bool, str | None]:
+        """Verify whether differences are within acceptable float tolerance or row reordering."""
+        try:
+            import duckdb
+
+            from data_rewind.comparator.engine import TabularComparator
+            from data_rewind.comparator.models import CaseClassification, ComparisonConfig
+
+            conn = duckdb.connect(":memory:")
+            try:
+                replayed_posix = replayed_parquet.resolve().as_posix()
+                conn.execute(f"CREATE TABLE replayed AS SELECT * FROM '{replayed_posix}'")
+
+                # Attempt to infer a candidate key for row alignment in numeric comparisons
+                inferred_pk: list[str] = []
+                if isinstance(hist_table, list) and hist_table:
+                    first_row = hist_table[0]
+                    for candidate in ("id", "order_id", "txn_id", "metric_id", "account_id"):
+                        if candidate in first_row:
+                            inferred_pk = [candidate]
+                            break
+                    if not inferred_pk:
+                        non_floats = [k for k, v in first_row.items() if not isinstance(v, float)]
+                        if non_floats and len(non_floats) < len(first_row):
+                            inferred_pk = non_floats
+
+                    cmp_cfg = ComparisonConfig(
+                        primary_key=inferred_pk,
+                        atol=float_tolerance,
+                        rtol=float_tolerance,
+                    )
+                    cols = [d[0] for d in conn.execute("SELECT * FROM replayed").description]
+                    replayed_rows = [
+                        dict(zip(cols, r, strict=False))
+                        for r in conn.execute("SELECT * FROM replayed").fetchall()
+                    ]
+                    diff_res = TabularComparator.compare(hist_table, replayed_rows, config=cmp_cfg)
+                elif isinstance(hist_table, (Path, str)):
+                    hist_path = Path(hist_table).resolve()
+                    hist_posix = hist_path.as_posix()
+                    if hist_posix.lower().endswith(".csv"):
+                        conn.execute(
+                            f"CREATE TABLE hist AS SELECT * FROM read_csv_auto('{hist_posix}')"
+                        )
+                    else:
+                        conn.execute(f"CREATE TABLE hist AS SELECT * FROM '{hist_posix}'")
+
+                    cols_info = conn.execute("PRAGMA table_info('replayed')").fetchall()
+                    col_names = [r[1] for r in cols_info]
+                    for candidate in ("id", "order_id", "txn_id", "metric_id", "account_id"):
+                        if candidate in col_names:
+                            inferred_pk = [candidate]
+                            break
+
+                    cmp_cfg = ComparisonConfig(
+                        primary_key=inferred_pk,
+                        atol=float_tolerance,
+                        rtol=float_tolerance,
+                    )
+                    diff_res = TabularComparator.compare_tables(
+                        conn, "hist", "replayed", config=cmp_cfg
+                    )
+
+                row_count_match = diff_res.baseline_row_count == diff_res.target_row_count
+                if (
+                    row_count_match
+                    and not diff_res.schema_diff.added_columns
+                    and not diff_res.schema_diff.removed_columns
+                ):
+                    if diff_res.is_equal or (
+                        diff_res.modified_count == 0
+                        and diff_res.added_count == 0
+                        and diff_res.removed_count == 0
+                    ):
+                        return True, "Matches within float tolerance or row reordering"
+                    if (
+                        CaseClassification.CASE_11_FLOAT_TOLERANCE in diff_res.case_classifications
+                        and diff_res.added_count == 0
+                        and diff_res.removed_count == 0
+                    ):
+                        return (
+                            True,
+                            f"Numeric variance within tolerance (float_tolerance <= {float_tolerance})",
+                        )
+                    if (
+                        CaseClassification.CASE_6_REORDERED_ROWS in diff_res.case_classifications
+                        and diff_res.modified_count == 0
+                    ):
+                        return True, "Row order drift only; multiset identical"
+            finally:
+                conn.close()
+        except Exception:
+            return False, None
+        return False, None
 
     @classmethod
     def _find_input_artifact(

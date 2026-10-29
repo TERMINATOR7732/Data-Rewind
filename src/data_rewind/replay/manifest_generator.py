@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from uuid import UUID
 
 from data_rewind.core.domain.models import TransformationStep
+from data_rewind.core.integrity.hashing import compute_pipeline_definition_hash
 from data_rewind.core.integrity.manifest import (
     ManifestInput,
     ManifestStepSnapshot,
@@ -19,9 +20,9 @@ from data_rewind.core.integrity.manifest import (
 def generate_replay_manifest(
     run_id: UUID,
     pipeline_version_id: UUID,
-    pipeline_definition_hash: str,
-    inputs: Sequence[ManifestInput],
-    steps: Sequence[TransformationStep],
+    pipeline_definition_hash: str | None = None,
+    inputs: Sequence[ManifestInput] = (),
+    steps: Sequence[TransformationStep] = (),
     step_output_hashes: dict[str, str] | None = None,
 ) -> ReplayManifest:
     """Generate canonical replay manifest for an executed run."""
@@ -41,10 +42,14 @@ def generate_replay_manifest(
         for s in steps
     ]
 
+    effective_definition_hash = pipeline_definition_hash
+    if not effective_definition_hash or effective_definition_hash == "0" * 64:
+        effective_definition_hash = compute_pipeline_definition_hash(steps)
+
     return ReplayManifest.create(
         run_id=run_id,
         pipeline_version_id=pipeline_version_id,
-        pipeline_definition_hash=pipeline_definition_hash,
+        pipeline_definition_hash=effective_definition_hash,
         inputs=list(inputs),
         steps_snapshot=step_snapshots,
     )

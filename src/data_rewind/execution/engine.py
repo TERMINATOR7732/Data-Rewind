@@ -286,7 +286,13 @@ class PipelineExecutor:
             on_clause = params.get("on")
 
             if on_clause:
-                cond = on_clause
+                cond_str = str(on_clause)
+                if ";" in cond_str or "--" in cond_str or "/*" in cond_str:
+                    raise DataRewindError(
+                        f"Disallowed SQL comment or statement termination in join condition in step '{sid}'",
+                        code="UNSAFE_JOIN_CONDITION",
+                    )
+                cond = cond_str
             elif join_keys:
                 if isinstance(join_keys, list):
                     cond = " AND ".join(f't1."{k}" = t2."{k}"' for k in join_keys)
@@ -315,9 +321,20 @@ class PipelineExecutor:
             group_by_cols = params.get("group_by_columns", [])
             aggs = params.get("aggregations", {})
 
+            agg_pattern = re.compile(
+                r"^(SUM|AVG|COUNT|MIN|MAX|MEDIAN|STDDEV|VARIANCE|FIRST|LAST)\s*\(\s*(DISTINCT\s+)?([a-zA-Z0-9_\"`]+|\*)\s*\)$",
+                re.IGNORECASE,
+            )
             select_parts: list[str] = [f'"{c}"' for c in group_by_cols]
             for alias, agg_expr in aggs.items():
-                select_parts.append(f'{agg_expr} AS "{alias}"')
+                clean_expr = str(agg_expr).strip()
+                if not agg_pattern.match(clean_expr):
+                    raise DataRewindError(
+                        f"Disallowed or invalid aggregate expression '{agg_expr}' in step '{sid}'.",
+                        code="INVALID_AGGREGATE_EXPRESSION",
+                    )
+                clean_alias = str(alias).replace('"', '""')
+                select_parts.append(f'{clean_expr} AS "{clean_alias}"')
 
             group_clause = (
                 f"GROUP BY {', '.join(f'"{c}"' for c in group_by_cols)}" if group_by_cols else ""

@@ -11,6 +11,8 @@ Implements:
 from __future__ import annotations
 
 import hashlib
+import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -100,3 +102,40 @@ def verify_content_integrity(path: Path, expected_hash: str) -> None:
                 "actual_hash": actual_hash,
             },
         )
+
+
+def compute_pipeline_definition_hash(
+    steps: Sequence[Any],
+) -> str:
+    """Compute deterministic SHA-256 digest of serialized canonical DAG steps and configs.
+
+    Conforms to SPEC-MOD-02 Section 2 and SPEC-MOD-03 Section 3.4.
+    """
+    serialized: list[dict[str, Any]] = []
+    for s in steps:
+        if hasattr(s, "operation_type"):
+            op = (
+                s.operation_type.value
+                if hasattr(s.operation_type, "value")
+                else str(s.operation_type)
+            )
+        elif hasattr(s, "operation"):
+            op = str(s.operation)
+        else:
+            op = ""
+
+        step_id = getattr(s, "step_id", "")
+        input_step_ids = list(getattr(s, "input_step_ids", []))
+        parameters = dict(getattr(s, "parameters", {}))
+
+        serialized.append(
+            {
+                "step_id": step_id,
+                "operation": op,
+                "input_step_ids": input_step_ids,
+                "parameters": parameters,
+            }
+        )
+
+    payload = json.dumps(serialized, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()

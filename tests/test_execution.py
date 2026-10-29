@@ -248,3 +248,48 @@ def test_pipeline_executor_rejects_unsafe_expression(temp_workspace: Path) -> No
     assert res.failed_step_id == "step_unsafe"
     err = str(res.error_message).lower()
     assert "prohibited" in err or "disallowed" in err
+
+
+def test_pipeline_executor_rejects_unsafe_join_condition(temp_workspace: Path) -> None:
+    steps = [
+        TransformationStep(
+            step_id="step_join_unsafe",
+            operation_type=OperationType.JOIN_DATASETS,
+            input_step_ids=["t1", "t2"],
+            parameters={"join_type": "inner", "on": "t1.id = t2.id; DROP TABLE students;--"},
+        )
+    ]
+
+    res = PipelineExecutor.execute_pipeline(
+        steps=steps,
+        inputs={"t1": [{"id": 1}], "t2": [{"id": 1}]},
+        options=ExecutionOptions(workspace_root=temp_workspace),
+    )
+
+    assert res.status == RunLifecycle.FAILED
+    assert res.failed_step_id == "step_join_unsafe"
+    assert "disallowed sql comment or statement termination" in str(res.error_message).lower()
+
+
+def test_pipeline_executor_rejects_unsafe_aggregate_expression(temp_workspace: Path) -> None:
+    steps = [
+        TransformationStep(
+            step_id="step_agg_unsafe",
+            operation_type=OperationType.AGGREGATE_GROUP_BY,
+            input_step_ids=["raw_data"],
+            parameters={
+                "group_by_columns": ["id"],
+                "aggregations": {"evil": "1; DROP TABLE users"},
+            },
+        )
+    ]
+
+    res = PipelineExecutor.execute_pipeline(
+        steps=steps,
+        inputs={"raw_data": [{"id": 1}]},
+        options=ExecutionOptions(workspace_root=temp_workspace),
+    )
+
+    assert res.status == RunLifecycle.FAILED
+    assert res.failed_step_id == "step_agg_unsafe"
+    assert "disallowed or invalid aggregate expression" in str(res.error_message).lower()

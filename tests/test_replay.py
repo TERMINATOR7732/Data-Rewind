@@ -292,3 +292,172 @@ def test_replay_outcome_missing_historical_hashes_fails(replay_workspace: Path) 
     assert result.outcome == ReplayOutcome.FAILED_VERIFICATION
     assert "missing" in result.explanation.lower()
     assert result.step_verifications["step_noop"].is_matched is False
+
+
+def test_replay_outcome_partially_reproducible_float_tolerance(
+    replay_workspace: Path,
+) -> None:
+    """Verify that minor floating-point variances within float_tolerance yield PARTIALLY_REPRODUCIBLE."""
+    raw_dir = replay_workspace / "raw_inputs"
+    test_csv = raw_dir / "numeric_data.csv"
+    with open(test_csv, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["id", "val"])
+        writer.writeheader()
+        writer.writerow({"id": 1, "val": 100.0})
+
+    c_hash = compute_content_hash(test_csv)
+    pinned_csv = raw_dir / f"{c_hash}.csv"
+    test_csv.replace(pinned_csv)
+
+    steps = [
+        TransformationStep(
+            step_id="step_num",
+            operation_type=OperationType.DERIVE_COLUMN,
+            input_step_ids=["raw_data"],
+            parameters={"target_column": "adjusted", "expression": "val * 1.00000001"},
+        )
+    ]
+
+    manifest = generate_replay_manifest(
+        run_id=uuid4(),
+        pipeline_version_id=uuid4(),
+        inputs=[
+            ManifestInput(
+                input_id="raw_data",
+                version_id=uuid4(),
+                content_hash=c_hash,
+                multiset_hash="0" * 64,
+                row_count=1,
+                byte_size=pinned_csv.stat().st_size,
+            )
+        ],
+        steps=steps,
+    )
+
+    # Historical data had val * 1.0 = 100.0 (relative diff is ~1e-8, well within 1e-6)
+    hist_table = [{"id": 1, "val": 100.0, "adjusted": 100.0}]
+    fake_hist_hash = "a" * 64
+
+    result = HistoricalReplayer.replay_run(
+        manifest=manifest,
+        workspace_root=replay_workspace,
+        historical_step_hashes={"step_num": fake_hist_hash},
+        float_tolerance=1e-6,
+        historical_tables={"step_num": hist_table},
+    )
+
+    assert result.outcome == ReplayOutcome.PARTIALLY_REPRODUCIBLE
+    assert "partially reproduced" in result.explanation.lower()
+    assert result.step_verifications["step_num"].is_matched is True
+
+
+def test_replay_outcome_partially_reproducible_missing_intermediate_hash(
+    replay_workspace: Path,
+) -> None:
+    """Verify that when intermediate hashes are missing but terminal checkpoints match, outcome is PARTIALLY_REPRODUCIBLE."""
+    raw_dir = replay_workspace / "raw_inputs"
+    test_csv = raw_dir / "multi_step.csv"
+    with open(test_csv, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["id", "status"])
+        writer.writeheader()
+        writer.writerow({"id": 1, "status": "OK"})
+
+    c_hash = compute_content_hash(test_csv)
+    pinned_csv = raw_dir / f"{c_hash}.csv"
+    test_csv.replace(pinned_csv)
+
+    steps = [
+        TransformationStep(
+            step_id="step_1",
+            operation_type=OperationType.FILTER_ROWS,
+            input_step_ids=["raw_data"],
+            parameters={"predicate": "id > 0"},
+        ),
+        TransformationStep(
+            step_id="step_2",
+            operation_type=OperationType.DERIVE_COLUMN,
+            input_step_ids=["step_1"],
+            parameters={"target_column": "flag", "expression": "1"},
+        ),
+    ]
+
+    manifest = generate_replay_manifest(
+        run_id=uuid4(),
+        pipeline_version_id=uuid4(),
+        inputs=[
+            ManifestInput(
+                input_id="raw_data",
+                version_id=uuid4(),
+                content_hash=c_hash,
+                multiset_hash="0" * 64,
+                row_count=1,
+                byte_size=pinned_csv.stat().st_size,
+            )
+        ],
+        steps=steps,
+    )
+
+    # Replayed step_2 hash
+    expected_step_2_hash = compute_multiset_hash([{"id": 1, "status": "OK", "flag": 1}])
+
+    # Only step_2 historical hash is provided; step_1 is omitted
+    result = HistoricalReplayer.replay_run(
+        manifest=manifest,
+        workspace_root=replay_workspace,
+        historical_step_hashes={"step_2": expected_step_2_hash},
+    )
+
+    assert result.outcome == ReplayOutcome.PARTIALLY_REPRODUCIBLE
+    assert "partially reproduced" in result.explanation.lower()
+    assert result.step_verifications["step_1"].is_matched is False
+    assert result.step_verifications["step_2"].is_matched is True
+
+
+def test_replay_outcome_tampered_definition_hash_fails(
+    replay_workspace: Path,
+) -> None:
+    """Verify that a tampered pipeline_definition_hash triggers FAILED_VERIFICATION."""
+    raw_dir = replay_workspace / "raw_inputs"
+    test_csv = raw_dir / "tamper.csv"
+    with open(test_csv, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["id"])
+        writer.writeheader()
+        writer.writerow({"id": 1})
+
+    c_hash = compute_content_hash(test_csv)
+    pinned_csv = raw_dir / f"{c_hash}.csv"
+    test_csv.replace(pinned_csv)
+
+    steps = [
+        TransformationStep(
+            step_id="step_1",
+            operation_type=OperationType.FILTER_ROWS,
+            input_step_ids=["raw_data"],
+            parameters={"predicate": "id > 0"},
+        )
+    ]
+
+    manifest = generate_replay_manifest(
+        run_id=uuid4(),
+        pipeline_version_id=uuid4(),
+        pipeline_definition_hash="d" * 64,  # Intentionally invalid / tampered hash
+        inputs=[
+            ManifestInput(
+                input_id="raw_data",
+                version_id=uuid4(),
+                content_hash=c_hash,
+                multiset_hash="0" * 64,
+                row_count=1,
+                byte_size=pinned_csv.stat().st_size,
+            )
+        ],
+        steps=steps,
+    )
+
+    result = HistoricalReplayer.replay_run(
+        manifest=manifest,
+        workspace_root=replay_workspace,
+    )
+
+    assert result.outcome == ReplayOutcome.FAILED_VERIFICATION
+    assert "pipeline definition integrity failure" in result.explanation.lower()

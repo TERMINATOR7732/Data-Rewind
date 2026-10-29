@@ -132,3 +132,13 @@ def test_investigation_repository_crud(repo: InvestigationRepository) -> None:
     assert deleted is True
     assert repo.get(inv.investigation_id) is None
     assert repo.list() == []
+
+
+def test_investigation_repository_wal_mode_and_busy_timeout(tmp_path: Path) -> None:
+    db_file = tmp_path / "wal_test.db"
+    repo = InvestigationRepository(db_file)
+    with repo._connect() as conn:
+        journal_mode = conn.execute("PRAGMA journal_mode;").fetchone()[0]
+        busy_timeout = conn.execute("PRAGMA busy_timeout;").fetchone()[0]
+    assert journal_mode.lower() == "wal"
+    assert busy_timeout == 5000
