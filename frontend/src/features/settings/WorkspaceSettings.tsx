@@ -3,12 +3,14 @@ import {
   AlertCircle,
   CheckCircle2,
   HardDrive,
+  RefreshCw,
   ShieldAlert,
   Trash2,
 } from "lucide-react";
 import { api, ApiClientError } from "../../lib/api";
 import { WorkspaceInfo, WorkspacePurgeResponse } from "../../types/api";
 import { TabularNum } from "../../components/TabularNum";
+import { storageManager } from "../../runtime/storage/storage-manager";
 
 export const WorkspaceSettings: React.FC = () => {
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfo | null>(null);
@@ -26,8 +28,40 @@ export const WorkspaceSettings: React.FC = () => {
       setError(null);
       const data = await api.getWorkspaceInfo();
       setWorkspaceInfo(data);
+    } catch {
+      // Fallback to browser runtime storage telemetry
+      try {
+        const telemetry = await storageManager.getTelemetry("default");
+        setWorkspaceInfo({
+          workspace_path: "Browser OPFS & IndexedDB Sandbox",
+          total_storage_bytes: telemetry.totalDiskBytes,
+          total_storage_mb: +(telemetry.totalDiskBytes / (1024 * 1024)).toFixed(2),
+          file_count: telemetry.totalArtifacts,
+          investigations_db_bytes: 0,
+          verifications_db_bytes: 0,
+        });
+      } catch {
+        setError("Failed to load workspace storage telemetry.");
+      }
+    }
+  };
+
+  const handleGarbageCollect = async () => {
+    try {
+      setPurging(true);
+      setError(null);
+      const result = await storageManager.collectGarbage();
+      setPurgeResult({
+        purged_bytes: result.collectedBytes,
+        unlinked_files_count: result.collectedArtifactIds.length,
+        vacuum_completed: true,
+        message: `Reference-aware Garbage Collection freed ${result.collectedArtifactIds.length} unreferenced artifact(s). Retained ${result.retainedArtifactIds.length} artifact(s).`,
+      });
+      await loadInfo();
     } catch (err: any) {
-      setError(err instanceof ApiClientError ? err.message : "Failed to load workspace info.");
+      setError(err?.message || "Garbage collection failed.");
+    } finally {
+      setPurging(false);
     }
   };
 
@@ -139,6 +173,26 @@ export const WorkspaceSettings: React.FC = () => {
           </code>
         </div>
       )}
+
+      {/* Maintenance Zone: Reference-Aware Garbage Collection */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div>
+          <h4 className="font-semibold text-zinc-100 font-mono text-sm flex items-center gap-2">
+            <RefreshCw className="w-4 h-4 text-emerald-400" /> Reference-Aware Garbage Collection
+          </h4>
+          <p className="text-xs text-zinc-400 mt-1">
+            Safely discovers and removes orphaned or unreferenced artifacts from local storage while strictly preserving all artifacts tied to retained runs, datasets, and investigations.
+          </p>
+        </div>
+        <button
+          onClick={handleGarbageCollect}
+          disabled={purging}
+          className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-100 font-mono text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap disabled:opacity-50 border border-zinc-700"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${purging ? "animate-spin text-emerald-400" : ""}`} />
+          Run Garbage Collection
+        </button>
+      </div>
 
       {/* Danger Zone: Application-Managed Purge */}
       <div className="bg-zinc-900 border border-rose-900/60 rounded-xl p-6 shadow-xl flex flex-col gap-5">

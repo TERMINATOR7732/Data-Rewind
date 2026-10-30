@@ -8,6 +8,10 @@ import {
 import { api, ApiClientError } from "../../lib/api";
 import { ForensicDossier } from "../../types/api";
 import { StatusBadge } from "../../components/StatusBadge";
+import { indexedDBStorage } from "../../runtime/storage/indexeddb";
+import { JSONDossierExporter } from "../../runtime/reports/json-exporter";
+import { MarkdownDossierExporter } from "../../runtime/reports/markdown-exporter";
+import { CSVExporter } from "../../runtime/reports/csv-exporter";
 
 interface ReportStudioProps {
   initialDossierId?: string | null;
@@ -35,7 +39,21 @@ export const ReportStudio: React.FC<ReportStudioProps> = ({ initialDossierId }) 
     try {
       setLoading(true);
       setError(null);
-      const data = await api.getDossier(id);
+      let data: ForensicDossier | null = null;
+      try {
+        data = await api.getDossier(id);
+      } catch {
+        // Fallback to local IndexedDB
+        const stored = await indexedDBStorage.getVerification(id);
+        if (stored) {
+          data = stored as ForensicDossier;
+        }
+      }
+
+      if (!data) {
+        throw new Error(`Dossier '${id}' not found on server or in local browser storage.`);
+      }
+
       setDossier(data);
       if (data.verification.dual_axis.baseline_axis?.step_comparisons) {
         const steps = Object.keys(data.verification.dual_axis.baseline_axis.step_comparisons);
@@ -43,7 +61,7 @@ export const ReportStudio: React.FC<ReportStudioProps> = ({ initialDossierId }) 
       }
       setPreviewContent(JSON.stringify(data, null, 2));
     } catch (err: any) {
-      setError(err instanceof ApiClientError ? `${err.code}: ${err.message}` : "Failed to load dossier.");
+      setError(err instanceof ApiClientError ? `${err.code}: ${err.message}` : err.message || "Failed to load dossier.");
     } finally {
       setLoading(false);
     }
@@ -54,9 +72,45 @@ export const ReportStudio: React.FC<ReportStudioProps> = ({ initialDossierId }) 
     try {
       setExporting(true);
       setError(null);
-      await api.exportReport(dossier.metadata.dossier_id, format, stepId || undefined);
+      try {
+        await api.exportReport(dossier.metadata.dossier_id, format, stepId || undefined);
+      } catch {
+        // Browser-local client-side export fallback
+        let content = "";
+        let filename = `forensic_report_${dossier.metadata.dossier_id.slice(0, 8)}`;
+        let mimeType = "text/plain";
+
+        if (format === "json") {
+          content = JSONDossierExporter.export(dossier);
+          filename += ".json";
+          mimeType = "application/json";
+        } else if (format === "markdown") {
+          content = MarkdownDossierExporter.export(dossier);
+          filename += ".md";
+          mimeType = "text/markdown";
+        } else {
+          // CSV export
+          const isSafe = format === "safe_csv";
+          const comp = stepId && dossier.verification.dual_axis.baseline_axis?.step_comparisons?.[stepId];
+          const sampleRows = comp ? [{ step: stepId, is_equal: comp.is_equal, identical: comp.identical_count, modified: comp.modified_count, added: comp.added_count, removed: comp.removed_count }] : [{ dossier_id: dossier.metadata.dossier_id, verdict: dossier.verification.verdict, pipeline: dossier.metadata.pipeline_name }];
+          const res = CSVExporter.exportRows(sampleRows, undefined, { mode: isSafe ? "safe" : "raw", includeHeaderComment: true });
+          content = res.csvContent;
+          filename += isSafe ? "_safe.csv" : "_raw.csv";
+          mimeType = "text/csv";
+        }
+
+        const blob = new Blob([content], { type: mimeType });
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      }
     } catch (err: any) {
-      setError(err instanceof ApiClientError ? err.message : "Export failed.");
+      setError(err instanceof ApiClientError ? err.message : err.message || "Export failed.");
     } finally {
       setExporting(false);
     }

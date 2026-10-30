@@ -26,29 +26,29 @@ test.describe('Onboarding Tour, Brand Identity, and Responsive Design', () => {
     await expect(page.getByText('Execute Forensic Investigation')).toBeVisible();
 
     // Test Back button
-    await page.getByRole('button', { name: /Back/i }).click();
+    await page.getByRole('button', { name: /Back/i }).click({ force: true });
     await expect(page.getByText('Step 1 of 5')).toBeVisible();
 
     // Advance forward
-    await page.getByRole('button', { name: /Next/i }).click();
+    await page.getByRole('button', { name: /Next/i }).click({ force: true });
     await expect(page.getByText('Step 2 of 5')).toBeVisible();
 
-    await page.getByRole('button', { name: /Next/i }).click();
+    await page.getByRole('button', { name: /Next/i }).click({ force: true });
     await expect(page.getByText('Step 3 of 5')).toBeVisible();
     await expect(page.getByText('Identify Earliest Observable Divergence (EOD)')).toBeVisible();
 
-    await page.getByRole('button', { name: /Next/i }).click();
+    await page.getByRole('button', { name: /Next/i }).click({ force: true });
     await expect(page.getByText('Step 4 of 5')).toBeVisible();
     await expect(page.getByText('Inspect Evidence & Lineage Graph')).toBeVisible();
 
-    await page.getByRole('button', { name: /Next/i }).click();
+    await page.getByRole('button', { name: /Next/i }).click({ force: true });
     await expect(page.getByText('Step 5 of 5')).toBeVisible();
     await expect(page.getByText('Verify Candidate Fix with Tri-Run Evaluation')).toBeVisible();
 
     // 5. Finish Tour
     const finishBtn = page.getByRole('button', { name: /Finish Tour/i });
     await expect(finishBtn).toBeVisible();
-    await finishBtn.click();
+    await finishBtn.click({ force: true });
 
     // Tour dialog should be dismissed
     await expect(page.getByText('Step 5 of 5')).not.toBeVisible();

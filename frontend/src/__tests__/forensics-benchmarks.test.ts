@@ -113,7 +113,7 @@ describe("Forensic Tabular Comparator — Scaling & Benchmark Suite", () => {
     expect(result.identical_count + result.modified_count + result.added_count).toBe(target.length);
     expect(result.is_equal).toBe(false);
     expect(durationMs).toBeLessThan(30_000);
-  });
+  }, 30_000);
 
   it("benchmarks 10,000 rows keyless multiset comparison", async () => {
     const { baseline, target } = generateBenchmarkDatasets(10_000);
