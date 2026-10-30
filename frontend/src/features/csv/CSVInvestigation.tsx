@@ -50,7 +50,7 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
   onDatasetReady,
   isHostedDemo = false,
 }) => {
-  const { navigateToInvestigation } = useInvestigationContext();
+  const { navigateToInvestigation, setCurrentInvestigation, setActiveDataset } = useInvestigationContext();
 
   const isHostedEnvironment =
     isHostedDemo ||
@@ -104,28 +104,31 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
     };
   }, []);
 
+  const resetStateForNewFile = (newFile: File) => {
+    setFile(newFile);
+    setError(null);
+    setUploadResult(null);
+    setPreviewData(null);
+    setPipelineOutcome(null);
+    setOutputRows([]);
+    setOutputColumns([]);
+    setBaselineExecution(null);
+    setBaselinePipeline(null);
+    setCandidateExecution(null);
+    // Explicitly clear stale cross-dataset investigation context
+    setCurrentInvestigation(null);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-      setError(null);
-      setUploadResult(null);
-      setPreviewData(null);
-      setPipelineOutcome(null);
-      setOutputRows([]);
-      setBaselineExecution(null);
+      resetStateForNewFile(e.target.files[0]);
     }
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setFile(e.dataTransfer.files[0]);
-      setError(null);
-      setUploadResult(null);
-      setPreviewData(null);
-      setPipelineOutcome(null);
-      setOutputRows([]);
-      setBaselineExecution(null);
+      resetStateForNewFile(e.dataTransfer.files[0]);
     }
   };
 
@@ -158,14 +161,31 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
         }
 
         const buffer = new Uint8Array(await file.arrayBuffer());
-        const sanitizedTableName = file.name
+
+        // Derive SHA-256 content fingerprint to guarantee absolute table and dataset isolation
+        let shortHash = "";
+        try {
+          const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          shortHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 10);
+        } catch {
+          // Fallback hash derivation
+          shortHash = Math.random().toString(36).slice(2, 10);
+        }
+
+        const cleanBase = file.name
           .replace(/\.csv$/i, "")
           .replace(/[^a-zA-Z0-9_]/g, "_")
           .toLowerCase();
 
+        const sanitizedTableName = `raw_${cleanBase}_${shortHash}`;
+
         const metadata = await runtime.importCsv(sanitizedTableName, buffer, {
           header: true,
         });
+
+        // Ensure datasetId reflects deterministic content hash
+        metadata.datasetId = sanitizedTableName;
 
         // Persist metadata to IndexedDB
         try {
@@ -173,6 +193,9 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
         } catch (storageErr) {
           console.warn("IndexedDB persistence warning:", storageErr);
         }
+
+        // Set active dataset in context so other views stay in sync
+        setActiveDataset(metadata);
 
         // Fetch initial preview rows via SQL
         const previewResult = await runtime.executeQuery<Record<string, unknown>>(

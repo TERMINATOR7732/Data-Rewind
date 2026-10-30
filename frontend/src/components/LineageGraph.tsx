@@ -68,7 +68,7 @@ export const LineageGraph: React.FC<LineageGraphProps> = ({
                 isSelected
                   ? "bg-zinc-850 border-emerald-500 ring-2 ring-emerald-500/40"
                   : isEOD
-                  ? "bg-amber-950/80 border-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.4)]"
+                  ? "bg-amber-950/80 border-2 border-amber-500"
                   : isTainted
                   ? "bg-zinc-900 border-rose-700/80 hover:border-rose-500"
                   : "bg-zinc-900 border-zinc-700/80 hover:border-zinc-500"
@@ -82,7 +82,7 @@ export const LineageGraph: React.FC<LineageGraphProps> = ({
                   <span className="truncate">{sid}</span>
                 </span>
                 {isEOD && (
-                  <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-900/80 text-amber-200 border border-amber-600 font-bold animate-pulse">
+                  <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-900/80 text-amber-200 border border-amber-600 font-bold">
                     EOD
                   </span>
                 )}
@@ -145,8 +145,8 @@ export const LineageGraph: React.FC<LineageGraphProps> = ({
   return (
     <div className="flex flex-col h-full bg-zinc-950 rounded-lg border border-zinc-800 overflow-hidden shadow-lg">
       {/* Canvas Top Bar */}
-      <div className="p-3 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between z-10">
-        <div className="flex items-center gap-3">
+      <div className="p-3 border-b border-zinc-800 bg-zinc-900 flex flex-wrap items-center justify-between gap-2 z-10">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="text-xs font-mono font-semibold text-zinc-300 flex items-center gap-1.5">
             <Layers className="w-4 h-4 text-emerald-400" /> Pipeline DAG Lineage & Divergence Canvas
           </span>
@@ -155,6 +155,18 @@ export const LineageGraph: React.FC<LineageGraphProps> = ({
               Earliest Divergence: <strong>{eodStep}</strong>
             </span>
           )}
+          {/* Legend */}
+          <div className="flex items-center gap-3 text-[11px] font-mono pl-2 border-l border-zinc-800 text-zinc-400">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" /> Clean
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" /> First Divergence (EOD)
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-rose-400 inline-block" /> Downstream Tainted
+            </span>
+          </div>
         </div>
 
         {/* View Mode Toggle (Graph vs Table) */}

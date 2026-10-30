@@ -1,0 +1,4 @@
+order_id,customer_id,amount,status
+101,CUST-A,150.00,COMPLETED
+102,CUST-B,25.50,PENDING
+103,CUST-C,300.00,COMPLETED

@@ -32,7 +32,8 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
   currentInvestigation,
   onSelectInvestigation,
 }) => {
-  const { navigateToVerification, navigateToReports } = useInvestigationContext();
+  const { navigateToVerification, navigateToReports, navigateToCSV, navigateToDemo, activeDataset } =
+    useInvestigationContext();
 
   const [investigationsList, setInvestigationsList] = useState<InvestigationSummary[]>([]);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
@@ -301,16 +302,25 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
         </div>
         <h2 className="text-xl font-bold text-zinc-100 font-mono">No Active Investigation</h2>
         <p className="text-xs text-zinc-400 max-w-md mt-2 font-mono leading-relaxed">
-          Launch a demonstration scenario from the <strong>Demo Sandbox</strong> or run an in-browser forensic probe to initiate forensic comparison and lineage analysis.
+          {activeDataset ? (
+            <>
+              You have an active dataset loaded: <strong className="text-zinc-200">{activeDataset.name}</strong> (
+              <TabularNum value={activeDataset.rowCount} /> rows). Build and compare a pipeline in the CSV tab or run a probe below.
+            </>
+          ) : (
+            <>
+              Upload a CSV file or launch a scenario from the Demo Sandbox to compare baseline and candidate pipeline executions.
+            </>
+          )}
         </p>
 
-        {/* Action Button: Run Browser Forensic Probe */}
-        <div className="mt-6 flex items-center gap-3">
+        {/* Action Buttons */}
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <button
             data-testid="run-browser-probe"
             onClick={handleRunBrowserProbe}
             disabled={isExecutingProbe}
-            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-zinc-950 font-mono font-bold text-xs flex items-center gap-2 shadow-lg hover:shadow-emerald-900/30 transition-all disabled:opacity-50"
+            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-zinc-950 font-mono font-bold text-xs flex items-center gap-2 border border-emerald-500 transition-all disabled:opacity-50"
           >
             {isExecutingProbe ? (
               <>
@@ -321,6 +331,22 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
                 <Play className="w-3.5 h-3.5 fill-current" /> Run In-Browser Forensic Probe
               </>
             )}
+          </button>
+
+          <button
+            type="button"
+            onClick={navigateToCSV}
+            className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-mono font-medium text-xs border border-zinc-700 transition-all"
+          >
+            Upload CSV File
+          </button>
+
+          <button
+            type="button"
+            onClick={navigateToDemo}
+            className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-mono font-medium text-xs border border-zinc-700 transition-all"
+          >
+            Explore Demo Scenarios
           </button>
         </div>
 
@@ -392,7 +418,7 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
           className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 flex items-center gap-4 min-w-0 sm:min-w-[280px] shadow-inner"
         >
           <div className="p-2.5 rounded-lg bg-amber-950/80 border border-amber-800 text-amber-400 flex items-center justify-center flex-shrink-0">
-            <AlertTriangle className="w-5 h-5 animate-pulse" />
+            <AlertTriangle className="w-5 h-5" />
           </div>
           <div className="min-w-0">
             <span className="text-[10px] font-mono uppercase text-zinc-400 font-bold block truncate">

@@ -171,6 +171,68 @@ export interface InvestigationSummary {
   created_at: string;
 }
 
+export interface StructuredFindingWhere {
+  step_id: string;
+  step_name?: string;
+  dataset_name?: string;
+  operation: string;
+  affected_columns: string[];
+}
+
+export interface StructuredFindingEvidence {
+  baseline_row_count: number;
+  target_row_count: number;
+  row_delta: number;
+  baseline_hash?: string;
+  target_hash?: string;
+  schema_changes?: {
+    added: string[];
+    removed: string[];
+    type_changes: Record<string, [string, string]>;
+  };
+  sample_records?: Array<{
+    key: Record<string, unknown>;
+    before: Record<string, unknown>;
+    after: Record<string, unknown>;
+    diff_columns: string[];
+  }>;
+  observed_facts: string[];
+}
+
+export interface StructuredFindingImpact {
+  risk_level: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  blast_radius_steps: string[];
+  affected_terminal_sinks: string[];
+  consequence: string;
+}
+
+export interface StructuredFindingRemediation {
+  action: string;
+  explanation: string;
+  verification_check: string;
+}
+
+export interface StructuredFindingTechnicalDetails {
+  rule_id: string;
+  rule_name: string;
+  evidence_tier: string;
+  divergence_category?: string;
+  confidence_explanation?: string;
+  parameters_diff?: {
+    baseline?: Record<string, unknown>;
+    target?: Record<string, unknown>;
+  };
+}
+
+export interface StructuredFinding {
+  what_went_wrong: string;
+  where: StructuredFindingWhere;
+  evidence: StructuredFindingEvidence;
+  impact: StructuredFindingImpact;
+  remediation: StructuredFindingRemediation;
+  technical_details: StructuredFindingTechnicalDetails;
+}
+
 export interface Investigation {
   investigation_id: string;
   title: string;
@@ -184,6 +246,9 @@ export interface Investigation {
   primary_keys_by_step: Record<string, string[]>;
   step_dependencies: Record<string, string[]>;
   created_at: string;
+  findings?: any[];
+  structured_findings?: StructuredFinding[];
+  evidence_chain?: EvidenceItem[];
 }
 
 export interface EvidenceItem {

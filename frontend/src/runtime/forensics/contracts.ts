@@ -163,6 +163,82 @@ export interface DiagnosticFinding {
   interpretation: string;
   limitations: string;
   next_investigation: string;
+
+  // The Five Core Explainability Questions
+  structured_finding?: StructuredFinding;
+}
+
+export interface StructuredFindingWhere {
+  step_id: string;
+  step_name?: string;
+  dataset_name?: string;
+  operation: string;
+  affected_columns: string[];
+}
+
+export interface StructuredFindingEvidence {
+  baseline_row_count: number;
+  target_row_count: number;
+  row_delta: number;
+  baseline_hash?: string;
+  target_hash?: string;
+  schema_changes?: {
+    added: string[];
+    removed: string[];
+    type_changes: Record<string, [string, string]>;
+  };
+  sample_records?: Array<{
+    key: Record<string, unknown>;
+    before: Record<string, unknown>;
+    after: Record<string, unknown>;
+    diff_columns: string[];
+  }>;
+  observed_facts: string[];
+}
+
+export interface StructuredFindingImpact {
+  risk_level: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  blast_radius_steps: string[];
+  affected_terminal_sinks: string[];
+  consequence: string;
+}
+
+export interface StructuredFindingRemediation {
+  action: string;
+  explanation: string;
+  verification_check: string;
+}
+
+export interface StructuredFindingTechnicalDetails {
+  rule_id: DiagnosticRuleID | string;
+  rule_name: string;
+  evidence_tier: EvidenceTier;
+  divergence_category?: string;
+  confidence_explanation?: string;
+  parameters_diff?: {
+    baseline?: Record<string, unknown>;
+    target?: Record<string, unknown>;
+  };
+}
+
+export interface StructuredFinding {
+  // 1. What went wrong? (Plain, direct, unambiguous language — no jargon)
+  what_went_wrong: string;
+
+  // 2. Where did it go wrong? (Exact step, dataset, transformation, affected columns)
+  where: StructuredFindingWhere;
+
+  // 3. What is the evidence? (Exact measured values, expected vs actual row counts, before/after values, sample records, schema changes)
+  evidence: StructuredFindingEvidence;
+
+  // 4. Why does it matter? (Downstream impact, tainted steps, affected terminal sinks, risk level)
+  impact: StructuredFindingImpact;
+
+  // 5. How can I fix and verify it? (Actionable recommendations, why it helps, measurable verification conditions)
+  remediation: StructuredFindingRemediation;
+
+  // Technical diagnostic codes and hashes for expandable developer panel
+  technical_details: StructuredFindingTechnicalDetails;
 }
 
 export interface EODResult {

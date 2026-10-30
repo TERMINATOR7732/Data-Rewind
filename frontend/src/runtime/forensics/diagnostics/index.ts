@@ -9,6 +9,10 @@ import {
   EvidenceTier,
   StepDiagnosticContext,
 } from "../contracts";
+import { StructuredExplainer } from "./structured-explainer";
+
+export { StructuredExplainer };
+export type { BuildStructuredFindingParams } from "./structured-explainer";
 
 export class DiagnosticRuleEngine {
   /**
@@ -21,7 +25,7 @@ export class DiagnosticRuleEngine {
     const f1 = this.evaluateDR01(ctx);
     if (f1) findings.push(f1);
 
-    // DR-02: Arithmetic Expression Mutation
+    // DR-02: Arithmetic Expression / Parameter Mutation
     const f2 = this.evaluateDR02(ctx);
     if (f2) findings.push(f2);
 
@@ -41,6 +45,17 @@ export class DiagnosticRuleEngine {
     const f6 = this.evaluateDR06(ctx);
     if (f6) findings.push(f6);
 
+    // Attach structured explainability answering the 5 Core Questions to every finding
+    findings.forEach((f) => {
+      if (!f.structured_finding) {
+        f.structured_finding = StructuredExplainer.buildStructuredFinding({
+          finding: f,
+          ctx,
+          diff: ctx.diff_result,
+        });
+      }
+    });
+
     return findings;
   }
 
@@ -50,6 +65,14 @@ export class DiagnosticRuleEngine {
    */
   public static evaluateDR01(ctx: StepDiagnosticContext): DiagnosticFinding | null {
     if (!ctx.is_ingestion_node) {
+      return null;
+    }
+
+    // If the step itself has differing transformation parameters, this is code/parameter mutation, not input drift.
+    const baseParams = ctx.baseline_parameters || {};
+    const targParams = ctx.target_parameters || {};
+    const paramsDiffer = JSON.stringify(baseParams) !== JSON.stringify(targParams);
+    if (paramsDiffer) {
       return null;
     }
 
@@ -98,7 +121,7 @@ export class DiagnosticRuleEngine {
   }
 
   /**
-   * DR-02: Arithmetic Expression Mutation
+   * DR-02: Arithmetic Expression / Transformation Parameter Mutation
    * Evidence Tier: CAUSAL_HYPOTHESIS_DIRECT_CODE_DIFF
    */
   public static evaluateDR02(ctx: StepDiagnosticContext): DiagnosticFinding | null {
@@ -124,40 +147,94 @@ export class DiagnosticRuleEngine {
     }
 
     const diff = ctx.diff_result;
-    if (diff.baseline_row_count !== diff.target_row_count || diff.modified_count === 0) {
-      return null;
+
+    // Check for predicate mutation (e.g. filter_rows)
+    if (
+      baseParams.predicate !== undefined &&
+      targParams.predicate !== undefined &&
+      baseParams.predicate !== targParams.predicate
+    ) {
+      const basePred = String(baseParams.predicate);
+      const targPred = String(targParams.predicate);
+      const rowDelta = diff.target_row_count - diff.baseline_row_count;
+
+      return {
+        rule_id: DiagnosticRuleID.DR_02_ARITHMETIC_EXPRESSION_MUTATION,
+        rule_name: "Transformation Parameter Mutation",
+        step_id: ctx.step_id,
+        evidence_tier: EvidenceTier.CAUSAL_HYPOTHESIS_DIRECT_CODE_DIFF,
+        message: `Filter condition in step '${ctx.step_id}' mutated from '${basePred}' to '${targPred}', causing ${Math.abs(rowDelta)} rows delta (${diff.baseline_row_count} -> ${diff.target_row_count} rows).`,
+        details: {
+          baseline_predicate: basePred,
+          target_predicate: targPred,
+          baseline_row_count: diff.baseline_row_count,
+          target_row_count: diff.target_row_count,
+          row_delta: rowDelta,
+        },
+        affected_columns: diff.schema_diff?.common_columns || [],
+        confidence_explanation:
+          "Transformation inputs are identical; filter predicate parameter diff isolates the conditional logic modification.",
+        observed: `Predicate changed from '${basePred}' to '${targPred}'. Output shifted from ${diff.baseline_row_count} to ${diff.target_row_count} rows.`,
+        interpretation: `The mutated filter condition altered the subset of records passing downstream.`,
+        limitations: "Domain intent of the filter boundary condition requires business context to verify.",
+        next_investigation: `Review predicate condition '${targPred}' against specification.`,
+      };
     }
 
-    // Extract affected columns from sample field diffs
-    const affectedCols = new Set<string>();
-    for (const sample of diff.sample_row_diffs) {
-      for (const fd of sample.field_diffs || []) {
-        affectedCols.add(fd.column);
+    // Check for expression mutation (e.g. derive_column)
+    if (
+      diff.modified_count > 0 ||
+      (baseParams.expression && targParams.expression && baseParams.expression !== targParams.expression)
+    ) {
+      const affectedCols = new Set<string>();
+      for (const sample of diff.sample_row_diffs) {
+        for (const fd of sample.field_diffs || []) {
+          affectedCols.add(fd.column);
+        }
       }
+
+      const baseExpr = (baseParams.expression as string) || JSON.stringify(baseParams);
+      const targExpr = (targParams.expression as string) || JSON.stringify(targParams);
+
+      return {
+        rule_id: DiagnosticRuleID.DR_02_ARITHMETIC_EXPRESSION_MUTATION,
+        rule_name: "Arithmetic Expression Mutation",
+        step_id: ctx.step_id,
+        evidence_tier: EvidenceTier.CAUSAL_HYPOTHESIS_DIRECT_CODE_DIFF,
+        message: `Transformation expression in '${ctx.step_id}' mutated from '${baseExpr}' to '${targExpr}', causing value drift across ${diff.modified_count} rows.`,
+        details: {
+          baseline_expression: baseExpr,
+          target_expression: targExpr,
+          modified_row_count: diff.modified_count,
+          total_rows: diff.baseline_row_count,
+        },
+        affected_columns: Array.from(affectedCols).sort(),
+        confidence_explanation:
+          "Inputs to step are bit-for-bit identical; parameter AST diff isolates the formula change which accounts for 100% of the observed row value modifications.",
+        observed: `Step inputs are identical, row count preserved (${diff.baseline_row_count} rows), but ${diff.modified_count} rows exhibited value drift.`,
+        interpretation: `Formula change from '${baseExpr}' to '${targExpr}' directly caused the numeric drift.`,
+        limitations: "Semantic intent of the business formula change cannot be evaluated without human domain guidance.",
+        next_investigation: "Review git blame on transformation parameters and verify formula intent.",
+      };
     }
 
-    const baseExpr = (baseParams.expression as string) || JSON.stringify(baseParams);
-    const targExpr = (targParams.expression as string) || JSON.stringify(targParams);
-
+    // General parameter mutation
     return {
       rule_id: DiagnosticRuleID.DR_02_ARITHMETIC_EXPRESSION_MUTATION,
-      rule_name: "Arithmetic Expression Mutation",
+      rule_name: "Transformation Parameter Mutation",
       step_id: ctx.step_id,
       evidence_tier: EvidenceTier.CAUSAL_HYPOTHESIS_DIRECT_CODE_DIFF,
-      message: `Transformation expression in '${ctx.step_id}' mutated from '${baseExpr}' to '${targExpr}', causing value drift across ${diff.modified_count} rows with identical row counts.`,
+      message: `Transformation parameters in '${ctx.step_id}' mutated, altering step output.`,
       details: {
-        baseline_expression: baseExpr,
-        target_expression: targExpr,
-        modified_row_count: diff.modified_count,
-        total_rows: diff.baseline_row_count,
+        baseline_parameters: baseParams,
+        target_parameters: targParams,
       },
-      affected_columns: Array.from(affectedCols).sort(),
-      confidence_explanation:
-        "Inputs to step are bit-for-bit identical; parameter AST diff isolates the formula change which accounts for 100% of the observed row value modifications.",
-      observed: `Step inputs are identical, row count preserved (${diff.baseline_row_count} rows), but ${diff.modified_count} rows exhibited value drift.`,
-      interpretation: `Formula change from '${baseExpr}' to '${targExpr}' directly caused the numeric drift.`,
-      limitations: "Semantic intent of the business formula change cannot be evaluated without human domain guidance.",
-      next_investigation: "Review git blame on transformation parameters and verify formula intent.",
+      affected_columns: [],
+      confidence_explanation: "Inputs to step are identical; parameter changes isolate the divergence.",
+      observed: `Step produced different output hashes under mutated parameters.`,
+      interpretation: `Step parameters differed between baseline and target runs.`,
+      limitations: "Full AST analysis required for custom expressions.",
+      next_investigation: "Verify configuration parameters.",
     };
   }
 

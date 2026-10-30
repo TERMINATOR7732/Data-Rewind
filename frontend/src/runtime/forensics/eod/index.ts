@@ -3,7 +3,7 @@
  * Conforms strictly to SPEC-MOD-04 §2.1.
  */
 
-import { DiagnosticFinding, EODResult, EODStatus, EvidenceTier, StepDiagnosticContext } from "../contracts";
+import { DiagnosticFinding, DiagnosticRuleID, EODResult, EODStatus, EvidenceTier, StepDiagnosticContext } from "../contracts";
 import { DiagnosticRuleEngine } from "../diagnostics/index";
 
 export interface DetectEODOptions {
@@ -99,18 +99,24 @@ export class EODDetector {
     for (const stepId of topologicalOrder) {
       const ctx = stepContexts[stepId];
       if (ctx && ctx.is_ingestion_node && this.stepDiverged(ctx)) {
-        findings.push(...DiagnosticRuleEngine.evaluateStep(ctx));
-        return {
-          status: EODStatus.UPSTREAM_INPUT_DATA_DRIFT,
-          divergent_step_ids: [stepId],
-          primary_eod_step: stepId,
-          is_coarse_grained: false,
-          findings,
-          evidence_tier: EvidenceTier.CAUSAL_HYPOTHESIS_INPUT_DRIFT,
-          summary: `Earliest Observable Divergence detected at ingestion step '${stepId}'. Upstream input file changed content hash.`,
-          divergence_category: "UPSTREAM_INPUT_DATA_DRIFT",
-          affected_row_count: ctx.diff_result?.modified_count ?? ctx.diff_result?.added_count ?? 0,
-        };
+        const stepFindings = DiagnosticRuleEngine.evaluateStep(ctx);
+        const hasInputDrift = stepFindings.some(
+          (f) => f.rule_id === DiagnosticRuleID.DR_01_UPSTREAM_INPUT_DATA_DRIFT
+        );
+        if (hasInputDrift) {
+          findings.push(...stepFindings);
+          return {
+            status: EODStatus.UPSTREAM_INPUT_DATA_DRIFT,
+            divergent_step_ids: [stepId],
+            primary_eod_step: stepId,
+            is_coarse_grained: false,
+            findings,
+            evidence_tier: EvidenceTier.CAUSAL_HYPOTHESIS_INPUT_DRIFT,
+            summary: `Earliest Observable Divergence detected at ingestion step '${stepId}'. Upstream input file changed content hash.`,
+            divergence_category: "UPSTREAM_INPUT_DATA_DRIFT",
+            affected_row_count: ctx.diff_result?.modified_count ?? ctx.diff_result?.added_count ?? 0,
+          };
+        }
       }
     }
 

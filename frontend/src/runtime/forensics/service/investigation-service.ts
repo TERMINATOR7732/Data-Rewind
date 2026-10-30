@@ -20,10 +20,11 @@ import {
   TabularDiffResult,
   StepDiagnosticContext,
   EODStatus,
+  StructuredFinding,
 } from "../contracts";
 import { TabularComparator } from "../comparator/index";
 import { EODDetector } from "../eod/index";
-import { DiagnosticRuleEngine } from "../diagnostics/index";
+import { DiagnosticRuleEngine, StructuredExplainer } from "../diagnostics/index";
 import { BlastRadiusEngine } from "../lineage/blast-radius";
 import { ColumnLineageTracker } from "../lineage/column-lineage";
 import { PagedDiffService } from "./paged-diff";
@@ -51,6 +52,7 @@ export interface InvestigationReport {
   eodResult: EODResult;
   blastRadius: BlastRadiusReport;
   findings: DiagnosticFinding[];
+  structuredFindings?: StructuredFinding[];
   evidenceChain: EvidenceItem[];
   stepRowDiffs: Record<string, RowDiff[]>;
 }
@@ -175,9 +177,12 @@ export class ForensicInvestigationService {
         .map((inId) => target.stepResults?.[inId]?.contentHash)
         .filter((h): h is string => !!h);
 
+      const hasSourceDataset = !!(pipeline.sourceDatasets?.[stepId] || node?.parameters?.dataset_name);
       const isIngestion =
-        inputs.length === 0 ||
-        stepId === topologicalOrder[0];
+        (node?.operationType as string) === "read_csv" ||
+        (node?.operationType as string) === "ingest" ||
+        (hasSourceDataset && inputs.length === 0) ||
+        (inputs.length === 0 && (!node?.parameters || Object.keys(node.parameters).length === 0));
 
       const inputDatasetName =
         (node?.parameters?.dataset_name as string) ||
@@ -252,7 +257,26 @@ export class ForensicInvestigationService {
 
     eodResult.findings = allFindings;
 
-    // 7. Build UI-compatible Evidence Items
+    // 7. Build Rich Structured Explainability (The 5 Core Questions)
+    const structuredFindings: StructuredFinding[] = allFindings
+      .map((f) => f.structured_finding)
+      .filter((sf): sf is StructuredFinding => !!sf);
+
+    if (structuredFindings.length === 0 && eodResult.primary_eod_step) {
+      const eodCtx = stepContexts[eodResult.primary_eod_step];
+      if (eodCtx) {
+        structuredFindings.push(
+          StructuredExplainer.buildStructuredFinding({
+            ctx: eodCtx,
+            diff: stepComparisons[eodResult.primary_eod_step],
+            blastRadius,
+            allStepIds: topologicalOrder,
+          })
+        );
+      }
+    }
+
+    // 8. Build UI-compatible Evidence Items
     const evidenceChain: EvidenceItem[] = allFindings.map((f) => ({
       tier: f.evidence_tier,
       step_id: f.step_id,
@@ -261,7 +285,7 @@ export class ForensicInvestigationService {
       remediation_advice: f.next_investigation || f.interpretation,
     }));
 
-    // 8. Construct complete Investigation object
+    // 9. Construct complete Investigation object
     const finalTitle =
       title ||
       (eodResult.primary_eod_step
@@ -287,6 +311,9 @@ export class ForensicInvestigationService {
       primary_keys_by_step: primaryKeysByStep,
       step_dependencies: stepDependencies,
       created_at: new Date().toISOString(),
+      findings: allFindings,
+      structured_findings: structuredFindings,
+      evidence_chain: evidenceChain,
     };
 
     const report: InvestigationReport = {
@@ -294,6 +321,7 @@ export class ForensicInvestigationService {
       eodResult,
       blastRadius,
       findings: allFindings,
+      structuredFindings,
       evidenceChain,
       stepRowDiffs,
     };
