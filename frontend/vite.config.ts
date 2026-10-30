@@ -17,6 +17,16 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom", "lucide-react"],
+          xyflow: ["@xyflow/react"],
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: "jsdom",

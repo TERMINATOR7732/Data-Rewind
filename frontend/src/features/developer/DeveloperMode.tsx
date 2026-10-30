@@ -500,6 +500,9 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
             className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-xs font-mono text-zinc-300 focus:outline-none focus:border-emerald-600 leading-relaxed"
             spellCheck={false}
           />
+          <p className="text-[11px] font-mono text-zinc-400">
+            Accepts declarative JSON DAG format. (For YAML DAG definitions, execute via Python CLI: <code className="text-zinc-300">data-rewind run --config pipeline.yaml</code>).
+          </p>
 
           {/* Validation & Planning Result */}
           {validationResult && (

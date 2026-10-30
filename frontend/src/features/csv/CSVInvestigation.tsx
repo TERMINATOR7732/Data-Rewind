@@ -783,7 +783,7 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
                   <span>Pipeline Transformation DAG Builder</span>
                 </h3>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Chain 12 deterministic operations. Each step executes in topological order with intermediate checkpoint hashing.
+                  Chain deterministic single-table operations (filter, derive, select, drop, rename, deduplicate, sort, handle missing, cast types, aggregate). For multi-dataset joins and data quality assertion DAGs, use Developer Mode.
                 </p>
               </div>
 

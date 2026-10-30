@@ -103,53 +103,53 @@ Data Rewind enables data engineers, analytics engineers, and analysts to forensi
 
 Demo Mode runs entirely on pre-compiled, deterministic synthetic fixtures stored in the application distribution. It requires zero file uploads and zero network access.
 
-### 4.1 Scenario 1 (`SCN-01`): E-Commerce Refund Calculation Regression (Arithmetic Fault)
-1. **Initial Dataset & Pipeline:** Ingests `orders_2026.csv` (10,000 rows) and `returns_2026.csv` (1,200 rows). Pipeline: Ingest $\rightarrow$ Join Returns on `order_id` $\rightarrow$ Compute Net Revenue $\rightarrow$ Aggregate Daily Mart.
-2. **Injected Defect / Regression:** In Step 3 (`compute_net_revenue`), parameter expression changed from `gross_amount - (tax_amount + refund_amount)` to `gross_amount - tax_amount + refund_amount` (operator precedence sign error).
-3. **Expected Detection:** Earliest Observable Divergence (EOD) detected at Step 3. Output row counts match (10,000 rows), but 1,200 rows exhibit value drift.
-4. **Evidence Supporting Finding:** Step 3 inputs are identical across $R_0$ and $R_1$ ($H(\text{in}_{R_1}) = H(\text{in}_{R_0})$); AST diff of expression shows `+ refund_amount` instead of `- refund_amount`. 1,200 rows modified, average drift +$34.50.
-5. **Affected Downstream Nodes:** Step 4 (`daily_revenue_mart`), Step 5 (`executive_margin_summary`).
-6. **Proposed Correction:** Restore parentheses: `gross_amount - (tax_amount + refund_amount)`.
-7. **Expected Output Before & After:** Faulted Run $R_1$ total daily revenue: $1,245,600.00; Corrected Run $R_2$ total daily revenue: $1,204,200.00 (identical to Baseline $R_0$).
+### 4.1 Scenario 1 (`SCN-01`): Upstream Vendor Input Data Drift (`DR-01`)
+1. **Initial Dataset & Pipeline:** Ingests `orders_data` (Orders Ingestion & Regional Aggregation). Pipeline: `ingest_orders` $\rightarrow$ `filter_completed` $\rightarrow$ `aggregate_revenue`.
+2. **Injected Defect / Regression:** External source vendor modified ingestion payload (e.g. order amounts drifting from 100.0 to 120.0, or injected extraneous orders), producing upstream data drift at the ingestion boundary.
+3. **Expected Detection:** Earliest Observable Divergence (EOD) detected at Step 1 (`ingest_orders`). Rule `DR_01_UPSTREAM_INPUT_DATA_DRIFT` triggered.
+4. **Evidence Supporting Finding:** Step 1 raw input row hash and cell values deviate between $R_0$ and $R_1$; downstream filter and regional aggregation propagate the drifted totals.
+5. **Affected Downstream Nodes:** Step 2 (`filter_completed`), Step 3 (`aggregate_revenue`).
+6. **Proposed Correction:** Ingest sanitized vendor orders or apply upstream schema validation filter.
+7. **Expected Output Before & After:** Corrected Run $R_2$ restores baseline order amounts and matching regional revenue.
 8. **Expected Tri-Run Verification Verdict:** `VERIFIED_CLEAN` ($R_2 \equiv R_0$ downstream; delta against $R_1$ eliminated).
-9. **Negative Test:** If an incorrect fix changes formula to `gross_amount - tax_amount` (omitting refund deduction entirely), verification reports `NEW_FAULT_INTRODUCED`.
-10. **Regression Test:** Fixture assertion in `tests/fixtures/test_scn01_regression.py` validating that net revenue equals $R_0$ golden parquet.
+9. **Negative Test:** If fix leaves drifted amounts active, verification reports `REGRESSION_UNRESOLVED`.
+10. **Regression Test:** Automated assertion validating that regional revenue totals match golden baseline.
 
-### 4.2 Scenario 2 (`SCN-02`): Silent Schema Drift & Unmatched Join (Structural Fault)
-1. **Initial Dataset & Pipeline:** Ingests `sales_records.csv` (15,000 rows) and `vendor_catalog.csv` (500 rows). Pipeline: Ingest $\rightarrow$ Clean Sales $\rightarrow$ Inner Join on `vendor_id` $\rightarrow$ Vendor Spend Mart.
-2. **Injected Defect / Regression:** In upstream vendor catalog update, column `vendor_id` (integer, e.g. `104`) was renamed to `supplier_code` with string prefix (e.g. `"V-104"`).
-3. **Expected Detection:** EOD at Step 2 (`join_vendor_catalog`). Inner join drops from 15,000 rows in $R_0$ to 0 rows (or 42% drop if partial mismatch) without raising a runtime exception.
-4. **Evidence Supporting Finding:** Schema diff on right join input indicates column rename and type mutation (`INTEGER` $\rightarrow$ `STRING`). Join match rate dropped from 100% to 0%.
-5. **Affected Downstream Nodes:** `vendor_spend_mart`, `accounts_payable_summary`.
-6. **Proposed Correction:** Add column aliasing and type casting step: `cast(replace(supplier_code, 'V-', ''), 'INTEGER') as vendor_id`.
-7. **Expected Output Before & After:** Faulted Run $R_1$ mart has 0 rows; Corrected Run $R_2$ mart has 15,000 rows matching $R_0$.
+### 4.2 Scenario 2 (`SCN-02`): Arithmetic Expression Mutation (`DR-02`)
+1. **Initial Dataset & Pipeline:** Ingests `transactions` (Transaction Fee Calculation). Pipeline: `ingest_transactions` $\rightarrow$ `compute_fee` $\rightarrow$ `mart_revenue`.
+2. **Injected Defect / Regression:** In Step 2 (`compute_fee`), dynamic fee parameter expression mutated from `amount * 0.1` to `amount * 0.2` (100% fee multiplier increase).
+3. **Expected Detection:** EOD at Step 2 (`compute_fee`). Input data matches, but cell-level value drift occurs across all rows. Rule `DR_02_ARITHMETIC_EXPRESSION_MUTATION` triggered.
+4. **Evidence Supporting Finding:** Upstream inputs to Step 2 are identical ($H(\text{in}_{R_1}) = H(\text{in}_{R_0})$); AST diff indicates multiplier coefficient mutated from 0.1 to 0.2.
+5. **Affected Downstream Nodes:** Step 3 (`mart_revenue`).
+6. **Proposed Correction:** Restore fee expression to `amount * 0.1`.
+7. **Expected Output Before & After:** Faulted Run $R_1$ has doubled fees ($700.00 total); Corrected Run $R_2$ outputs $350.00 total matching $R_0$.
 8. **Expected Tri-Run Verification Verdict:** `VERIFIED_CLEAN`.
-9. **Negative Test:** If fix attempts string conversion on sales `vendor_id` without stripping prefix `"V-"`, join remains 0 rows, yielding `REGRESSION_UNRESOLVED`.
-10. **Regression Test:** Automated assertion checking join cardinality $\ge 15,000$ and zero null vendor names.
+9. **Negative Test:** If fee expression is altered to an incorrect formula, verification reports `REGRESSION_UNRESOLVED` or `COLLATERAL_DAMAGE`.
+10. **Regression Test:** Automated assertion checking fee calculation precision against $R_0$ golden fixture.
 
-### 4.3 Scenario 3 (`SCN-03`): Duplicate Webhook & Overcounting (Cardinality Fault)
-1. **Initial Dataset & Pipeline:** Ingests `payment_webhooks.csv` (8,000 rows). Pipeline: Ingest $\rightarrow$ Deduplicate on `transaction_id` $\rightarrow$ Join User Accounts $\rightarrow$ Compute Loyalty Points.
-2. **Injected Defect / Regression:** Upstream payment provider retried webhooks with identical `transaction_id` but distinct `event_id` and millisecond timestamps; Deduplication step omitted `subset=["transaction_id"]` and deduplicated across all columns.
-3. **Expected Detection:** EOD at Step 2 (`deduplicate_webhooks`). Row count increases from 8,000 to 9,450 rows in $R_1$ (1,450 duplicates injected).
-4. **Evidence Supporting Finding:** Frequency count of `transaction_id` reveals 1,450 keys appearing twice. Downstream loyalty points inflated by 18.1%.
-5. **Affected Downstream Nodes:** `user_loyalty_mart`, `financial_ledger_table`.
-6. **Proposed Correction:** Configure deduplication step to deduplicate explicitly on `subset=["transaction_id"]` keeping `first`.
-7. **Expected Output Before & After:** Faulted Run $R_1$ output row count: 9,450; Corrected Run $R_2$ output row count: 8,000 (100% multiset match with $R_0$).
+### 4.3 Scenario 3 (`SCN-03`): Unmatched Join Drop (`DR-03`)
+1. **Initial Dataset & Pipeline:** Ingests `orders` and `customers` (Customer Orders Join). Pipeline: `ingest_orders` + `ingest_customers` $\rightarrow$ `join_orders_customers` (inner join on `customer_id`).
+2. **Injected Defect / Regression:** In upstream customer updates or join configuration, customer ID references mutated or dropped, causing catastrophic 75% row drop during inner join.
+3. **Expected Detection:** EOD at Step 3 (`join_orders_customers`). Row count drops from baseline without syntax errors. Rule `DR_03_UNMATCHED_JOIN_DROP` triggered.
+4. **Evidence Supporting Finding:** Input orders and customers exist, but join match rate drops precipitously; row delta indicates missing joined records.
+5. **Affected Downstream Nodes:** All downstream marts dependent on `join_orders_customers`.
+6. **Proposed Correction:** Restore proper foreign keys or configure appropriate join fallback.
+7. **Expected Output Before & After:** Faulted Run $R_1$ output row count: 1; Corrected Run $R_2$ output row count: 4 (100% multiset match with $R_0$).
 8. **Expected Tri-Run Verification Verdict:** `VERIFIED_CLEAN`.
-9. **Negative Test:** If deduplication uses wrong key `event_id`, row count remains 9,450, yielding `REGRESSION_UNRESOLVED`.
-10. **Regression Test:** Key uniqueness assertion asserting `count(distinct transaction_id) == count(*)`.
+9. **Negative Test:** If foreign keys remain mismatched, row count remains depressed, yielding `REGRESSION_UNRESOLVED`.
+10. **Regression Test:** Cardinality assertion verifying join output row count equals baseline.
 
-### 4.4 Scenario 4 (`SCN-04`): Null Sentinel Coalesce Failure (Data Hygiene Fault)
-1. **Initial Dataset & Pipeline:** Ingests `crm_tier_data.csv` (12,000 rows). Pipeline: Ingest $\rightarrow$ Cast & Clean Discount Rates $\rightarrow$ Classify Customer Tiers $\rightarrow$ Discount Margin Report.
-2. **Injected Defect / Regression:** Upstream CRM migration introduced string `"N/A"` into nullable float column `discount_rate`. Step 2 cast operation configured with `error_behavior="coerce_null"` without a `coalesce` fallback, converting valid default discounts to NULL and causing tier classifier to drop 1,800 customers into `TIER_UNKNOWN`.
-3. **Expected Detection:** EOD at Step 2. Schema is identical, row count identical, but null count in `discount_rate` increases by 1,800 rows. Step 3 outputs 1,800 `TIER_UNKNOWN` classifications.
-4. **Evidence Supporting Finding:** Ingestion profiling surfaces string sentinel `"N/A"`. Step 2 output diff shows 1,800 float values transitioning from `0.05` to `NULL`.
-5. **Affected Downstream Nodes:** `customer_tier_mart`, `loyalty_discount_forecast`.
-6. **Proposed Correction:** Prepend null sentinel replacement: `handle_missing(columns=["discount_rate"], strategy="fill_literal", value=0.0)`.
-7. **Expected Output Before & After:** Faulted Run $R_1$ has 1,800 `TIER_UNKNOWN` customers; Corrected Run $R_2$ restores all customers to `SILVER` / `GOLD` tiers matching $R_0$.
+### 4.4 Scenario 4 (`SCN-04`): Null Sentinel Surge (`DR-05`)
+1. **Initial Dataset & Pipeline:** Ingests `metrics` (Metric Scoring & Cleansing). Pipeline: `ingest_metrics` $\rightarrow$ `clean_data`.
+2. **Injected Defect / Regression:** Expression or type conversion coerces valid scores to NULL (null sentinel surge), causing valid numeric scores to become null across all active records.
+3. **Expected Detection:** EOD at Step 2 (`clean_data`). Row counts match, but null count in `score` column surges from 0 to 100%. Rule `DR_05_NULL_SENTINEL_SURGE` triggered.
+4. **Evidence Supporting Finding:** Column null ratio diff surfaces 100% null mutation in `score`; raw input has valid non-null floats.
+5. **Affected Downstream Nodes:** Downstream scoring aggregations and analytics marts.
+6. **Proposed Correction:** Restore proper score derivation expression retaining numeric floats.
+7. **Expected Output Before & After:** Faulted Run $R_1$ has all null scores; Corrected Run $R_2$ restores non-null scores matching $R_0$.
 8. **Expected Tri-Run Verification Verdict:** `VERIFIED_CLEAN`.
-9. **Negative Test:** If sentinel is replaced with negative value `-1.0`, customer tier classification throws invalid range error, yielding `NEW_FAULT_INTRODUCED`.
-10. **Regression Test:** Assertion checking `TIER_UNKNOWN` count equals 0 and `discount_rate` null count equals 0.
+9. **Negative Test:** If expression still emits nulls, null ratio remains elevated, yielding `REGRESSION_UNRESOLVED`.
+10. **Regression Test:** Assertion verifying null ratio in `score` equals 0.0.
 
 ---
 
