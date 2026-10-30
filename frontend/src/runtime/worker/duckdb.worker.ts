@@ -23,6 +23,10 @@ import {
   EXECUTION_CONTRACT_VERSION,
 } from "../contracts/index";
 import { CsvParser } from "../csv/parser";
+import { validatePipeline } from "../pipeline/dag-validator";
+import { createExecutionPlan } from "../pipeline/planner";
+import { PipelineExecutionEngine } from "../pipeline/engine";
+import { executeTransformation, QueryExecutor } from "../pipeline/transformations/index";
 
 let dbInstance: duckdb.AsyncDuckDB | null = null;
 let activeConnection: duckdb.AsyncDuckDBConnection | null = null;
@@ -63,6 +67,14 @@ function mapDuckDBTypeToCanonical(duckdbType: string): DataType {
   return "STRING";
 }
 
+function sanitizeArrowValue(val: unknown): unknown {
+  if (typeof val === "bigint") {
+    const num = Number(val);
+    return Number.isSafeInteger(num) ? num : val.toString();
+  }
+  return val;
+}
+
 /**
  * Converts an Apache Arrow Table into a typed QueryResult.
  */
@@ -71,9 +83,18 @@ function arrowTableToQueryResult(table: any, durationMs: number): QueryResult {
   const columns: string[] = fields.map((f: any) => f.name);
   const columnTypes: string[] = fields.map((f: any) => String(f.type));
 
-  const rows: Record<string, unknown>[] = (table.toArray?.() || []).map(
+  const rawRows: Record<string, unknown>[] = (table.toArray?.() || []).map(
     (row: any) => (row.toJSON ? row.toJSON() : { ...row })
   );
+
+  const rows: Record<string, unknown>[] = rawRows.map((rawRow) => {
+    const sanitized: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(rawRow)) {
+      sanitized[k] = sanitizeArrowValue(v);
+    }
+    return sanitized;
+  });
+
   const numRows = table?.numRows ?? rows.length;
 
   return {
@@ -82,6 +103,37 @@ function arrowTableToQueryResult(table: any, durationMs: number): QueryResult {
     rows,
     rowCount: numRows,
     durationMs,
+  };
+}
+
+function createQueryExecutor(conn: duckdb.AsyncDuckDBConnection): QueryExecutor {
+  return {
+    async query<T = Record<string, unknown>>(sql: string): Promise<QueryResult<T>> {
+      const startTime = performance.now();
+      const table = await conn.query(sql);
+      const durationMs = performance.now() - startTime;
+      return arrowTableToQueryResult(table, durationMs) as QueryResult<T>;
+    },
+    async getSchema(tableName: string): Promise<DatasetSchema> {
+      const schemaTable = await conn.query(`DESCRIBE "${tableName}";`);
+      const schemaResult = arrowTableToQueryResult(schemaTable, 0);
+      const columns: ColumnSchema[] = schemaResult.rows.map((row: any, idx: number) => ({
+        name: String(row.column_name),
+        dataType: mapDuckDBTypeToCanonical(String(row.column_type)),
+        nullable: String(row.null).toUpperCase() === "YES",
+        ordinalPosition: idx + 1,
+      }));
+      return {
+        version: EXECUTION_CONTRACT_VERSION,
+        columns,
+        primaryKeys: [],
+      };
+    },
+    async getRowCount(tableName: string): Promise<number> {
+      const countTable = await conn.query(`SELECT COUNT(*)::BIGINT AS count FROM "${tableName}";`);
+      const countResult = arrowTableToQueryResult(countTable, 0);
+      return Number(countResult.rows[0]?.count ?? 0);
+    },
   };
 }
 
@@ -361,6 +413,77 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           requestId,
           action: "SUCCESS",
           payload: { tableName, rowCount },
+        });
+        break;
+      }
+
+      case "VALIDATE_PIPELINE": {
+        const { pipeline } = request.payload;
+        const validationResult = validatePipeline(pipeline);
+        sendResponse({
+          requestId,
+          action: "SUCCESS",
+          payload: validationResult,
+        });
+        break;
+      }
+
+      case "PLAN_PIPELINE": {
+        const { pipeline } = request.payload;
+        const plan = createExecutionPlan(pipeline);
+        sendResponse({
+          requestId,
+          action: "SUCCESS",
+          payload: plan,
+        });
+        break;
+      }
+
+      case "EXECUTE_PIPELINE": {
+        if (!isInitialized || !activeConnection) {
+          throw new RuntimeError(
+            ERROR_CODES.RUNTIME_NOT_INITIALIZED,
+            "Cannot execute pipeline: DuckDB-Wasm runtime is not initialized."
+          );
+        }
+
+        const executor = createQueryExecutor(activeConnection);
+        const engine = new PipelineExecutionEngine({
+          executor,
+          onProgress: (prog) => {
+            sendProgress(prog.stage, prog.percentComplete, prog.message);
+          },
+        });
+
+        const execResult = await engine.execute(request.payload);
+        sendResponse({
+          requestId,
+          action: "SUCCESS",
+          payload: execResult,
+        });
+        break;
+      }
+
+      case "EXECUTE_STEP": {
+        if (!isInitialized || !activeConnection) {
+          throw new RuntimeError(
+            ERROR_CODES.RUNTIME_NOT_INITIALIZED,
+            "Cannot execute step: DuckDB-Wasm runtime is not initialized."
+          );
+        }
+
+        const executor = createQueryExecutor(activeConnection);
+        const stepResult = await executeTransformation({
+          node: request.payload.node,
+          inputTables: request.payload.inputTables,
+          outputTable: request.payload.outputTable,
+          executor,
+        });
+
+        sendResponse({
+          requestId,
+          action: "SUCCESS",
+          payload: stepResult,
         });
         break;
       }

@@ -7,6 +7,12 @@
 import {
   DatasetMetadata,
   DatasetSchema,
+  PipelineDefinition,
+  ExecutionPlan,
+  ExecutionRequest,
+  PipelineExecutionResult,
+  ValidationResult,
+  PipelineNode,
 } from "./contracts/index";
 import {
   WorkerRequest,
@@ -16,6 +22,7 @@ import {
   ImportCsvPayload,
 } from "./contracts/protocol";
 import { ERROR_CODES, RuntimeError } from "./contracts/errors";
+import { TransformationResult } from "./pipeline/transformations/types";
 
 export interface BrowserExecutionRuntime {
   initialize(): Promise<void>;
@@ -30,6 +37,14 @@ export interface BrowserExecutionRuntime {
   ): Promise<QueryResult<T>>;
   getSchema(tableName: string): Promise<DatasetSchema>;
   getRowCount(tableName: string): Promise<number>;
+  validatePipeline(pipeline: PipelineDefinition): Promise<ValidationResult>;
+  planPipeline(pipeline: PipelineDefinition): Promise<ExecutionPlan>;
+  executePipeline(request: ExecutionRequest): Promise<PipelineExecutionResult>;
+  executeStep(
+    node: PipelineNode,
+    inputTables: string[],
+    outputTable: string
+  ): Promise<TransformationResult>;
   cancel(targetRequestId: string): Promise<void>;
   dispose(): Promise<void>;
   onProgress(callback: (progress: ProgressPayload) => void): () => void;
@@ -170,6 +185,34 @@ export class DuckDbWasmRuntime implements BrowserExecutionRuntime {
       { tableName }
     );
     return res.rowCount;
+  }
+
+  public async validatePipeline(pipeline: PipelineDefinition): Promise<ValidationResult> {
+    this.ensureInitialized();
+    return this.sendRequest<ValidationResult>("VALIDATE_PIPELINE", { pipeline });
+  }
+
+  public async planPipeline(pipeline: PipelineDefinition): Promise<ExecutionPlan> {
+    this.ensureInitialized();
+    return this.sendRequest<ExecutionPlan>("PLAN_PIPELINE", { pipeline });
+  }
+
+  public async executePipeline(request: ExecutionRequest): Promise<PipelineExecutionResult> {
+    this.ensureInitialized();
+    return this.sendRequest<PipelineExecutionResult>("EXECUTE_PIPELINE", request);
+  }
+
+  public async executeStep(
+    node: PipelineNode,
+    inputTables: string[],
+    outputTable: string
+  ): Promise<TransformationResult> {
+    this.ensureInitialized();
+    return this.sendRequest<TransformationResult>("EXECUTE_STEP", {
+      node,
+      inputTables,
+      outputTable,
+    });
   }
 
   public async cancel(targetRequestId: string): Promise<void> {

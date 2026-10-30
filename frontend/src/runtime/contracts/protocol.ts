@@ -3,7 +3,12 @@
  * Conforms to SPEC-MOD-07 browser runtime communication specification.
  */
 
-import { ExecutionError } from "./index";
+import {
+  ExecutionError,
+  PipelineDefinition,
+  ExecutionRequest,
+  PipelineNode,
+} from "./index";
 
 export type WorkerRequestAction =
   | "INITIALIZE"
@@ -11,6 +16,10 @@ export type WorkerRequestAction =
   | "EXECUTE_SQL"
   | "GET_TABLE_SCHEMA"
   | "GET_ROW_COUNT"
+  | "VALIDATE_PIPELINE"
+  | "PLAN_PIPELINE"
+  | "EXECUTE_PIPELINE"
+  | "EXECUTE_STEP"
   | "CANCEL"
   | "TERMINATE";
 
@@ -77,6 +86,34 @@ export interface GetRowCountRequest extends BaseWorkerRequest {
   };
 }
 
+export interface ValidatePipelineRequest extends BaseWorkerRequest {
+  action: "VALIDATE_PIPELINE";
+  payload: {
+    pipeline: PipelineDefinition;
+  };
+}
+
+export interface PlanPipelineRequest extends BaseWorkerRequest {
+  action: "PLAN_PIPELINE";
+  payload: {
+    pipeline: PipelineDefinition;
+  };
+}
+
+export interface ExecutePipelineRequest extends BaseWorkerRequest {
+  action: "EXECUTE_PIPELINE";
+  payload: ExecutionRequest;
+}
+
+export interface ExecuteStepRequest extends BaseWorkerRequest {
+  action: "EXECUTE_STEP";
+  payload: {
+    node: PipelineNode;
+    inputTables: string[];
+    outputTable: string;
+  };
+}
+
 export interface CancelRequest extends BaseWorkerRequest {
   action: "CANCEL";
   payload: {
@@ -94,6 +131,10 @@ export type WorkerRequest =
   | ExecuteSqlRequest
   | GetTableSchemaRequest
   | GetRowCountRequest
+  | ValidatePipelineRequest
+  | PlanPipelineRequest
+  | ExecutePipelineRequest
+  | ExecuteStepRequest
   | CancelRequest
   | TerminateRequest;
 
