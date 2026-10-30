@@ -6,15 +6,19 @@ import {
   Code2,
   Cpu,
   Database,
+  Download,
   Hash,
   Layers,
   Play,
+  RotateCcw,
   Terminal,
   ShieldCheck,
+  Upload,
 } from "lucide-react";
 import { api, ApiClientError } from "../../lib/api";
 import { TransformationStep } from "../../types/api";
 import { TabularNum } from "../../components/TabularNum";
+import { StatusBadge } from "../../components/StatusBadge";
 import { getBrowserRuntime } from "../../runtime/browser-runtime";
 import {
   PipelineDefinition,
@@ -25,6 +29,10 @@ import {
 } from "../../runtime/contracts/index";
 import { validatePipeline } from "../../runtime/pipeline/dag-validator";
 import { createExecutionPlan } from "../../runtime/pipeline/planner";
+import { ReplayEngine } from "../../runtime/replay/replay-engine";
+import { ReplayResult } from "../../runtime/replay/contracts";
+import { RunManifest } from "../../runtime/storage/run-manifest";
+import { indexedDBStorage } from "../../runtime/storage/indexeddb";
 
 const DEFAULT_PIPELINE_JSON = JSON.stringify(
   [
@@ -96,6 +104,11 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
   const [loading, setLoading] = useState<boolean>(false);
   const [progressText, setProgressText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Persistence & Replay state
+  const [savedManifest, setSavedManifest] = useState<RunManifest | null>(null);
+  const [replayResult, setReplayResult] = useState<ReplayResult | null>(null);
+  const [replaying, setReplaying] = useState<boolean>(false);
 
   /**
    * Helper to parse and convert steps into canonical PipelineDefinition.
@@ -231,6 +244,52 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
           if (res.topologicalOrder.length > 0) {
             setActivePreviewStep(res.topologicalOrder[res.topologicalOrder.length - 1]);
           }
+
+          // Build and persist versioned RunManifest
+          const execPlan: ExecutionPlan = {
+            planId: `plan_${canonical.pipelineId}`,
+            pipelineId: canonical.pipelineId,
+            topologicalOrder: res.topologicalOrder,
+            stages: [res.topologicalOrder],
+            stepInputs: {},
+            plannedAt: res.startedAt,
+            tieBreakerApplied: false,
+          };
+
+          const manifest: RunManifest = {
+            version: EXECUTION_CONTRACT_VERSION,
+            runId: res.executionId,
+            workspaceId: "default",
+            pipelineId: canonical.pipelineId,
+            pipelineName: canonical.pipelineId,
+            pipelineDefinitionHash: `hash_${canonical.pipelineId}`,
+            runType: "BASELINE",
+            status: "COMPLETED",
+            executionPlan: execPlan,
+            inputArtifacts: {},
+            stepsSnapshot: res.stepResults,
+            checkpointReferences: {},
+            missingEvidence: [],
+            startedAt: res.startedAt,
+            completedAt: res.completedAt,
+            durationMs: res.durationMs,
+            metadata: {
+              environmentFingerprint: {
+                platform: "browser",
+                duckdbWasmVersion: "1.29.0",
+                arrowVersion: "15.0.0",
+                runtimeEngine: "browser-wasm",
+                browserAgent: typeof navigator !== "undefined" ? navigator.userAgent : "node-test",
+              },
+            },
+          };
+
+          setSavedManifest(manifest);
+          try {
+            await indexedDBStorage.saveRunManifest(manifest);
+          } catch (persistErr) {
+            console.warn("Could not persist run manifest to IndexedDB:", persistErr);
+          }
         } finally {
           unsubscribe();
         }
@@ -243,6 +302,77 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
     } finally {
       setLoading(false);
       setProgressText(null);
+    }
+  };
+
+  const handleReplay = async () => {
+    if (!savedManifest) return;
+    try {
+      setReplaying(true);
+      setError(null);
+      setReplayResult(null);
+
+      const runtime = getBrowserRuntime();
+      if (!runtime.isReady()) await runtime.initialize();
+
+      let parsedSteps: any[];
+      let parsedInputs: Record<string, any[]>;
+      try {
+        parsedSteps = JSON.parse(pipelineJson);
+        parsedInputs = JSON.parse(inputRowsJson);
+      } catch (e: any) {
+        setError(`JSON Syntax Error during replay: ${e.message}`);
+        return;
+      }
+
+      const canonical = buildCanonicalPipeline(parsedSteps, Object.keys(parsedInputs));
+      const replayedRes = await runtime.executePipeline({
+        version: EXECUTION_CONTRACT_VERSION,
+        executionId: `replay_exec_${Date.now()}`,
+        pipeline: canonical,
+        runType: "HISTORICAL_REPLAY",
+      });
+
+      const replayEngine = new ReplayEngine();
+      const outcome = await replayEngine.evaluateReplay(savedManifest, replayedRes);
+      setReplayResult(outcome);
+    } catch (err: any) {
+      setError(err?.message || "Replay evaluation failed.");
+    } finally {
+      setReplaying(false);
+    }
+  };
+
+  const handleExportDAG = () => {
+    try {
+      const blob = new Blob([pipelineJson], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `pipeline_dag_${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setError(`Export failed: ${e.message}`);
+    }
+  };
+
+  const handleImportDAG = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const content = event.target?.result as string;
+          JSON.parse(content); // Validate JSON syntax
+          setPipelineJson(content);
+          setError(null);
+        } catch (parseErr: any) {
+          setError(`Invalid DAG JSON file: ${parseErr.message}`);
+        }
+      };
+      reader.readAsText(e.target.files[0]);
     }
   };
 
@@ -325,16 +455,43 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Pipeline Steps Editor */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col gap-3 shadow-xl">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <span className="text-xs font-mono font-semibold text-zinc-200 uppercase flex items-center gap-1.5">
               <Layers className="w-3.5 h-3.5 text-emerald-400" /> Pipeline Definition (JSON Steps)
             </span>
-            <button
-              onClick={handleValidate}
-              className="px-3 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-mono font-medium border border-zinc-700"
-            >
-              Validate DAG
-            </button>
+            <div className="flex items-center gap-1.5">
+              <label
+                className="px-2.5 py-1 rounded bg-zinc-850 hover:bg-zinc-800 text-zinc-300 text-xs font-mono border border-zinc-750 cursor-pointer flex items-center gap-1"
+                title="Import Pipeline JSON"
+              >
+                <Upload className="w-3 h-3 text-zinc-400" />
+                <span>Import</span>
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleImportDAG}
+                  className="hidden"
+                />
+              </label>
+
+              <button
+                type="button"
+                onClick={handleExportDAG}
+                className="px-2.5 py-1 rounded bg-zinc-850 hover:bg-zinc-800 text-zinc-300 text-xs font-mono border border-zinc-750 flex items-center gap-1"
+                title="Export Pipeline JSON"
+              >
+                <Download className="w-3 h-3 text-zinc-400" />
+                <span>Export</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleValidate}
+                className="px-3 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-mono font-medium border border-zinc-700"
+              >
+                Validate DAG
+              </button>
+            </div>
           </div>
           <textarea
             value={pipelineJson}
@@ -436,6 +593,41 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
               <div className="flex items-center justify-between text-[11px] text-zinc-400">
                 <span>Duration: <TabularNum value={executionResult.durationMs ?? executionResult.duration_ms} /> ms</span>
                 <span>Checkpoints: {Object.keys(executionResult.stepResults || executionResult.step_results || {}).length}</span>
+              </div>
+
+              {/* Replay Historical Run Action */}
+              {savedManifest && engineMode === "browser" && (
+                <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
+                  <span className="text-[11px] text-zinc-400">
+                    Manifest preserved in IndexedDB.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleReplay}
+                    disabled={replaying}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded bg-zinc-800 hover:bg-zinc-750 text-zinc-200 text-xs font-mono font-medium border border-zinc-700 disabled:opacity-50"
+                  >
+                    <RotateCcw className={`w-3.5 h-3.5 ${replaying ? "animate-spin text-emerald-400" : ""}`} />
+                    <span>{replaying ? "Replaying..." : "Replay Run"}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Replay Verification Result Card */}
+          {replayResult && (
+            <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl flex flex-col gap-2 font-mono text-xs">
+              <div className="flex items-center justify-between border-b border-zinc-900 pb-2">
+                <span className="text-zinc-400 font-semibold uppercase">Replay Verification Outcome</span>
+                <StatusBadge status={replayResult.outcome} size="sm" />
+              </div>
+              <p className="text-zinc-300 font-sans text-xs leading-relaxed">
+                {replayResult.explanation}
+              </p>
+              <div className="text-[11px] text-zinc-500 pt-1 flex justify-between">
+                <span>Replay ID: {replayResult.replayRunId.slice(0, 8)}</span>
+                <span>Duration: {replayResult.executionDurationMs} ms</span>
               </div>
             </div>
           )}

@@ -1,16 +1,21 @@
 import React, { useEffect, useState } from "react";
 import {
   AlertCircle,
+  Archive,
   CheckCircle2,
+  Download,
   HardDrive,
   RefreshCw,
   ShieldAlert,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { api, ApiClientError } from "../../lib/api";
 import { WorkspaceInfo, WorkspacePurgeResponse } from "../../types/api";
 import { TabularNum } from "../../components/TabularNum";
 import { storageManager } from "../../runtime/storage/storage-manager";
+import { ArchiveService } from "../../runtime/archive/archive-service";
+import { indexedDBStorage } from "../../runtime/storage/indexeddb";
 
 export const WorkspaceSettings: React.FC = () => {
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfo | null>(null);
@@ -18,6 +23,14 @@ export const WorkspaceSettings: React.FC = () => {
   const [showConfirm, setShowConfirm] = useState<boolean>(false);
   const [purgeResult, setPurgeResult] = useState<WorkspacePurgeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Portable Archive (.drz) state
+  const [availableInvestigations, setAvailableInvestigations] = useState<{ id: string; title: string }[]>([]);
+  const [selectedExportInvId, setSelectedExportInvId] = useState<string>("");
+  const [archiveStatus, setArchiveStatus] = useState<string | null>(null);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [importingArchive, setImportingArchive] = useState<boolean>(false);
+  const [exportingArchive, setExportingArchive] = useState<boolean>(false);
 
   useEffect(() => {
     loadInfo();
@@ -42,6 +55,92 @@ export const WorkspaceSettings: React.FC = () => {
         });
       } catch {
         setError("Failed to load workspace storage telemetry.");
+      }
+    }
+
+    // Load available investigations for archive export
+    try {
+      const invList = await indexedDBStorage.listInvestigations();
+      const mapped = invList.map((inv) => ({
+        id: inv.investigationId,
+        title: inv.title || inv.investigationId,
+      }));
+      setAvailableInvestigations(mapped);
+      if (mapped.length > 0 && !selectedExportInvId) {
+        setSelectedExportInvId(mapped[0].id);
+      }
+    } catch (e) {
+      console.warn("Could not list investigations for archive export:", e);
+    }
+  };
+
+  const handleExportArchive = async () => {
+    if (!selectedExportInvId) {
+      setArchiveError("Select an investigation to export.");
+      return;
+    }
+    try {
+      setExportingArchive(true);
+      setArchiveError(null);
+      setArchiveStatus("Packaging portable investigation archive bundle...");
+
+      const archiveService = new ArchiveService();
+      const bundle = await archiveService.exportArchive(selectedExportInvId);
+
+      const jsonStr = JSON.stringify(bundle, null, 2);
+      const blob = new Blob([jsonStr], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `investigation_${selectedExportInvId.slice(0, 12)}.drz`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      setArchiveStatus(`Investigation archive '${bundle.investigation.investigationId}' exported successfully.`);
+      setTimeout(() => setArchiveStatus(null), 5000);
+    } catch (err: any) {
+      setArchiveError(err?.message || "Failed to export archive.");
+    } finally {
+      setExportingArchive(false);
+    }
+  };
+
+  const handleImportArchive = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      try {
+        setImportingArchive(true);
+        setArchiveError(null);
+        setArchiveStatus(`Validating and importing archive '${file.name}'...`);
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          try {
+            const content = event.target?.result as string;
+            const bundle = JSON.parse(content);
+
+            const archiveService = new ArchiveService();
+            const result = await archiveService.importArchive(bundle, {
+              conflictStrategy: "RENAME_ON_CONFLICT",
+            });
+
+            setArchiveStatus(
+              `Archive imported successfully: ${result.importedArtifactsCount} artifact(s) restored for investigation '${result.investigationId}'.`
+            );
+            await loadInfo();
+            setTimeout(() => setArchiveStatus(null), 6000);
+          } catch (importErr: any) {
+            setArchiveError(`Archive import failed: ${importErr.message}`);
+          } finally {
+            setImportingArchive(false);
+          }
+        };
+        reader.readAsText(file);
+      } catch (err: any) {
+        setArchiveError(err?.message || "Failed to read archive file.");
+        setImportingArchive(false);
       }
     }
   };
@@ -192,6 +291,103 @@ export const WorkspaceSettings: React.FC = () => {
           <RefreshCw className={`w-3.5 h-3.5 ${purging ? "animate-spin text-emerald-400" : ""}`} />
           Run Garbage Collection
         </button>
+      </div>
+
+      {/* Archive Zone: Portable Investigation Archives (.drz) */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-xl flex flex-col gap-5">
+        <div className="flex items-center justify-between border-b border-zinc-800 pb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <Archive className="w-4 h-4 text-emerald-400" />
+            <h4 className="font-semibold text-zinc-100 font-mono text-sm">
+              Portable Investigation Archives (.drz)
+            </h4>
+          </div>
+          <span className="text-xs text-zinc-400 font-mono">SPEC-MOD-04 §3 Spec</span>
+        </div>
+
+        <p className="text-xs text-zinc-400 leading-relaxed font-sans">
+          Export fully self-contained investigation dossiers with manifests, cell-level diffs, and intermediate verification evidence.
+          Import verified archives from peers with staged checksum and path-traversal validation.
+        </p>
+
+        {archiveStatus && (
+          <div className="p-3 bg-emerald-950/80 border border-emerald-800 rounded-lg text-xs font-mono text-emerald-200 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <span>{archiveStatus}</span>
+          </div>
+        )}
+
+        {archiveError && (
+          <div className="p-3 bg-rose-950/80 border border-rose-800 rounded-lg text-xs font-mono text-rose-200 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+              <span>{archiveError}</span>
+            </div>
+            <button
+              onClick={() => setArchiveError(null)}
+              className="text-rose-400 hover:text-rose-200 font-bold"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+          {/* Export Archive */}
+          <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 flex flex-col gap-3">
+            <span className="text-xs font-mono font-bold text-zinc-200">Export Investigation Archive</span>
+            <div className="flex flex-col gap-2">
+              <label className="text-[11px] text-zinc-400 font-mono">Select Investigation:</label>
+              {availableInvestigations.length > 0 ? (
+                <select
+                  value={selectedExportInvId}
+                  onChange={(e) => setSelectedExportInvId(e.target.value)}
+                  className="bg-zinc-900 border border-zinc-800 text-xs text-zinc-200 p-2 rounded-lg font-mono focus:border-emerald-500 truncate"
+                >
+                  {availableInvestigations.map((inv) => (
+                    <option key={inv.id} value={inv.id}>
+                      {inv.title} ({inv.id.slice(0, 8)})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="text-xs text-zinc-500 font-mono italic p-2 bg-zinc-900 rounded border border-zinc-850">
+                  No saved investigations found in workspace.
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleExportArchive}
+              disabled={exportingArchive || availableInvestigations.length === 0}
+              className="mt-1 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-750 text-zinc-100 font-mono text-xs font-semibold flex items-center justify-center gap-2 border border-zinc-700 disabled:opacity-50"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-400" />
+              <span>{exportingArchive ? "Packaging Archive..." : "Export .drz Bundle"}</span>
+            </button>
+          </div>
+
+          {/* Import Archive */}
+          <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 flex flex-col gap-3">
+            <span className="text-xs font-mono font-bold text-zinc-200">Import Investigation Archive</span>
+            <p className="text-[11px] text-zinc-400 font-sans leading-relaxed">
+              Upload a portable <code className="text-zinc-300">.drz</code> archive. Validates cryptographic checksums, DAG invariants, and isolates files against directory traversal.
+            </p>
+
+            <label className="mt-auto px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-750 text-zinc-100 font-mono text-xs font-semibold flex items-center justify-center gap-2 border border-zinc-700 cursor-pointer">
+              <Upload className="w-3.5 h-3.5 text-emerald-400" />
+              <span>{importingArchive ? "Validating..." : "Choose .drz File to Import"}</span>
+              <input
+                type="file"
+                accept=".drz,.json"
+                onChange={handleImportArchive}
+                disabled={importingArchive}
+                className="hidden"
+              />
+            </label>
+          </div>
+        </div>
       </div>
 
       {/* Danger Zone: Application-Managed Purge */}

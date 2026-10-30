@@ -16,6 +16,8 @@ import { ArtifactReference, DatasetMetadata } from "../contracts/index";
 import { ERROR_CODES, RuntimeError } from "../contracts/errors";
 import { RunManifest } from "./run-manifest";
 
+export type { ArtifactReference, DatasetMetadata };
+
 export interface WorkspaceMetadata {
   workspaceId: string;
   name: string;

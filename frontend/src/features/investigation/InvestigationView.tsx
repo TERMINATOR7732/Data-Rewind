@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from "react";
 import {
   AlertTriangle,
+  Eye,
+  FileText,
   GitCompare,
   Play,
   RotateCcw,
+  ShieldCheck,
 } from "lucide-react";
 import { api, ApiClientError } from "../../lib/api";
 import {
@@ -18,6 +21,7 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { TabularNum } from "../../components/TabularNum";
 import { ForensicInvestigationService } from "../../runtime/forensics/index";
 import { PipelineDefinition, PipelineExecutionResult } from "../../runtime/contracts/index";
+import { useInvestigationContext } from "../context/InvestigationContext";
 
 interface InvestigationViewProps {
   currentInvestigation: Investigation | null;
@@ -28,6 +32,8 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
   currentInvestigation,
   onSelectInvestigation,
 }) => {
+  const { navigateToVerification, navigateToReports } = useInvestigationContext();
+
   const [investigationsList, setInvestigationsList] = useState<InvestigationSummary[]>([]);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [diffPage, setDiffPage] = useState<StepDiffPage | null>(null);
@@ -399,6 +405,51 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
               Category: <strong className="text-zinc-200">{eod_result.divergence_category}</strong>
             </span>
           </div>
+        </div>
+      </div>
+
+      {/* Recommended Next Actions Bar */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+        <div className="flex items-center gap-2 text-zinc-300 flex-wrap">
+          <span className="font-bold uppercase text-emerald-400">Next Actions:</span>
+          {eod_result.primary_eod_step ? (
+            <span className="text-zinc-400">
+              Divergence isolated at step <strong className="text-amber-400">{eod_result.primary_eod_step}</strong>.
+            </span>
+          ) : (
+            <span className="text-zinc-400">Pipeline runs are bit-for-bit identical across all checkpoints.</span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {eod_result.primary_eod_step && selectedStepId !== eod_result.primary_eod_step && (
+            <button
+              type="button"
+              onClick={() => handleStepSelect(eod_result.primary_eod_step!)}
+              className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-750 text-amber-300 border border-amber-800/60 flex items-center gap-1.5 transition-colors"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>Inspect EOD Step</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => navigateToVerification()}
+            className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-750 text-emerald-300 border border-emerald-800/60 flex items-center gap-1.5 transition-colors"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Verify Fix Candidate</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigateToReports()}
+            className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-750 text-zinc-200 border border-zinc-700 flex items-center gap-1.5 transition-colors"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Open in Report Studio</span>
+          </button>
         </div>
       </div>
 

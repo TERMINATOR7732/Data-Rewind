@@ -39,6 +39,7 @@ export interface InvestigationExecutionOptions {
   baseline: PipelineExecutionResult;
   target: PipelineExecutionResult;
   pipeline: PipelineDefinition;
+  targetPipeline?: PipelineDefinition;
   executor?: QueryExecutor;
   config?: ComparisonConfig;
   stepDataBaseline?: Record<string, Record<string, unknown>[]>;
@@ -73,10 +74,12 @@ export class ForensicInvestigationService {
       config = {},
       stepDataBaseline = {},
       stepDataTarget = {},
+      targetPipeline,
     } = options;
 
     // 1. Build step dependencies and node map from pipeline definition
     const nodeMap = new Map(pipeline.nodes.map((n) => [n.nodeId, n]));
+    const targetNodeMap = new Map((targetPipeline || pipeline).nodes.map((n) => [n.nodeId, n]));
     const stepDependencies: Record<string, string[]> = {};
     const primaryKeysByStep: Record<string, string[]> = {};
 
@@ -190,7 +193,7 @@ export class ForensicInvestigationService {
         baseline_input_hashes: baselineInputHashes,
         target_input_hashes: targetInputHashes,
         baseline_parameters: node?.parameters,
-        target_parameters: node?.parameters,
+        target_parameters: targetNodeMap.get(stepId)?.parameters || node?.parameters,
         baseline_output_hash: baseStep?.contentHash,
         target_output_hash: targetStep?.contentHash,
         diff_result: diffResult,
