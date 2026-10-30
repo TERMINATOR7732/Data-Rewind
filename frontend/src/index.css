@@ -23,6 +23,17 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Utility to hide scrollbars while preserving scroll functionality */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 /* Custom scrollbars for data tables and diffs */
 ::-webkit-scrollbar {
   width: 6px;

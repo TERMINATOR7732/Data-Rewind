@@ -299,13 +299,13 @@ export const DemoHub: React.FC<DemoHubProps> = ({
                   </p>
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-zinc-900">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-zinc-900 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
                     <span className="text-xs text-zinc-400 font-mono whitespace-nowrap">Fix Mode:</span>
                     <select
                       value={fixMode}
                       onChange={(e) => setFixMode(e.target.value)}
-                      className="bg-zinc-900 border border-zinc-750 text-xs text-zinc-200 px-3 py-1.5 rounded-lg focus:outline-none focus:border-emerald-500 w-full sm:w-auto font-sans"
+                      className="bg-zinc-900 border border-zinc-750 text-xs text-zinc-200 px-3 py-1.5 rounded-lg focus:outline-none focus:border-emerald-500 w-full sm:w-auto max-w-full font-sans truncate"
                     >
                       <option value="clean">Clean Fix (Restores Baseline Equivalence)</option>
                       <option value="intentional">Intentional Update (Contracted Logic Drift)</option>

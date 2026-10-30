@@ -67,6 +67,7 @@ frontend/dist/
 frontend/.vite/
 frontend/playwright-report/
 frontend/test-results/
+screenshots/
 *.tsbuildinfo
 
 .vercel
