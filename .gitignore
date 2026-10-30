@@ -62,9 +62,12 @@ Thumbs.db
 !.env.example
 
 # Frontend build artifacts and dependencies
+node_modules/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/public/duckdb/
+data_rewind_orders_test_pack*
 frontend/playwright-report/
 frontend/test-results/
 screenshots/
