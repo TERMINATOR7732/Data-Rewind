@@ -14,4 +14,5 @@ export * from "./storage/indexeddb";
 export * from "./storage/opfs";
 export * from "./expr/index";
 export * from "./pipeline/index";
+export * from "./forensics/index";
 export * from "./browser-runtime";

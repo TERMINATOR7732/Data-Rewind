@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import {
   AlertTriangle,
   GitCompare,
+  Play,
+  RotateCcw,
 } from "lucide-react";
 import { api, ApiClientError } from "../../lib/api";
 import {
@@ -14,6 +16,8 @@ import { EvidencePanel } from "../../components/EvidencePanel";
 import { LineageGraph } from "../../components/LineageGraph";
 import { StatusBadge } from "../../components/StatusBadge";
 import { TabularNum } from "../../components/TabularNum";
+import { ForensicInvestigationService } from "../../runtime/forensics/index";
+import { PipelineDefinition, PipelineExecutionResult } from "../../runtime/contracts/index";
 
 interface InvestigationViewProps {
   currentInvestigation: Investigation | null;
@@ -28,9 +32,10 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [diffPage, setDiffPage] = useState<StepDiffPage | null>(null);
   const [diffLoading, setDiffLoading] = useState<boolean>(false);
+  const [isExecutingProbe, setIsExecutingProbe] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load list of saved investigations
+  // Load list of saved investigations (merging local in-browser + server)
   useEffect(() => {
     loadInvestigations();
   }, []);
@@ -49,8 +54,13 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
 
   const loadInvestigations = async () => {
     try {
-      const list = await api.listComparisons();
-      setInvestigationsList(list);
+      const remoteList = await api.listComparisons().catch(() => []);
+      const localList = ForensicInvestigationService.listInvestigations();
+      const map = new Map<string, InvestigationSummary>();
+      for (const item of [...localList, ...remoteList]) {
+        map.set(item.investigation_id, item);
+      }
+      setInvestigationsList(Array.from(map.values()));
     } catch {
       // Ignore list loading errors if none exist yet
     }
@@ -65,10 +75,25 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
     try {
       setDiffLoading(true);
       setError(null);
+
+      // Check local in-browser investigation first
+      const localReport = ForensicInvestigationService.getInvestigationReport(invId);
+      if (localReport) {
+        const localPage = ForensicInvestigationService.getStepDiff(invId, stepId, status, page, 50);
+        setDiffPage(localPage);
+        return;
+      }
+
       const data = await api.getStepDiff(invId, stepId, status, page, 50);
       setDiffPage(data);
     } catch (err: any) {
-      setError(err instanceof ApiClientError ? `${err.code}: ${err.message}` : "Failed to load diffs.");
+      // Fallback check
+      const localPage = ForensicInvestigationService.getStepDiff(invId, stepId, status, page, 50);
+      if (localPage && localPage.rows.length > 0) {
+        setDiffPage(localPage);
+      } else {
+        setError(err instanceof ApiClientError ? `${err.code}: ${err.message}` : "Failed to load diffs.");
+      }
     } finally {
       setDiffLoading(false);
     }
@@ -90,10 +115,175 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
   const handleSwitchInvestigation = async (invId: string) => {
     try {
       setError(null);
+      const local = ForensicInvestigationService.getInvestigation(invId);
+      if (local) {
+        onSelectInvestigation(local);
+        return;
+      }
       const inv = await api.getComparison(invId);
       onSelectInvestigation(inv);
     } catch (err: any) {
       setError(err instanceof ApiClientError ? err.message : "Failed to fetch investigation.");
+    }
+  };
+
+  const handleRunBrowserProbe = async () => {
+    try {
+      setIsExecutingProbe(true);
+      setError(null);
+
+      const probePipeline: PipelineDefinition = {
+        version: "1.0.0",
+        pipelineId: "browser_forensic_pipeline",
+        name: "Browser Forensic Probe Pipeline",
+        nodes: [
+          {
+            nodeId: "step_1_ingest",
+            operationType: "select_columns",
+            parameters: { columns: ["id", "account", "amount", "fee", "status"], primary_keys: ["id"] },
+            inputNodeIds: [],
+          },
+          {
+            nodeId: "step_2_compute_fee",
+            operationType: "derive_column",
+            parameters: { target_column: "fee", expression: "amount * 0.05", primary_keys: ["id"] },
+            inputNodeIds: ["step_1_ingest"],
+          },
+          {
+            nodeId: "step_3_filter_settled",
+            operationType: "filter_rows",
+            parameters: { predicate: "status = 'SETTLED'", primary_keys: ["id"] },
+            inputNodeIds: ["step_2_compute_fee"],
+          },
+        ],
+        edges: [
+          { sourceNodeId: "step_1_ingest", targetNodeId: "step_2_compute_fee" },
+          { sourceNodeId: "step_2_compute_fee", targetNodeId: "step_3_filter_settled" },
+        ],
+        sourceDatasets: { step_1_ingest: "raw_settlements" },
+      };
+
+      // Raw source data
+      const sourceRows = [
+        { id: "TX_101", account: "ACC_9001", amount: 1000.0, fee: 50.0, status: "SETTLED" },
+        { id: "TX_102", account: "ACC_9002", amount: 2500.0, fee: 125.0, status: "PENDING" },
+        { id: "TX_103", account: "ACC_9003", amount: 400.0, fee: 20.0, status: "SETTLED" },
+        { id: "TX_104", account: "ACC_9004", amount: 12000.0, fee: 600.0, status: "SETTLED" },
+        { id: "TX_105", account: "ACC_9005", amount: 750.0, fee: 37.5, status: "CANCELLED" },
+      ];
+
+      // Baseline run: legitimate fee calculation (fee = amount * 0.05)
+      const baselineRowsStep2 = [
+        { id: "TX_101", account: "ACC_9001", amount: 1000.0, fee: 50.0, status: "SETTLED" },
+        { id: "TX_102", account: "ACC_9002", amount: 2500.0, fee: 125.0, status: "PENDING" },
+        { id: "TX_103", account: "ACC_9003", amount: 400.0, fee: 20.0, status: "SETTLED" },
+        { id: "TX_104", account: "ACC_9004", amount: 12000.0, fee: 600.0, status: "SETTLED" },
+        { id: "TX_105", account: "ACC_9005", amount: 750.0, fee: 37.5, status: "CANCELLED" },
+      ];
+
+      const baselineRowsStep3 = [
+        { id: "TX_101", account: "ACC_9001", amount: 1000.0, fee: 50.0, status: "SETTLED" },
+        { id: "TX_103", account: "ACC_9003", amount: 400.0, fee: 20.0, status: "SETTLED" },
+        { id: "TX_104", account: "ACC_9004", amount: 12000.0, fee: 600.0, status: "SETTLED" },
+      ];
+
+      // Candidate run: corrupted / mutated fee calculation (fee = amount * 0.10)
+      const candidateRowsStep2 = [
+        { id: "TX_101", account: "ACC_9001", amount: 1000.0, fee: 100.0, status: "SETTLED" },
+        { id: "TX_102", account: "ACC_9002", amount: 2500.0, fee: 250.0, status: "PENDING" },
+        { id: "TX_103", account: "ACC_9003", amount: 400.0, fee: 40.0, status: "SETTLED" },
+        { id: "TX_104", account: "ACC_9004", amount: 12000.0, fee: 1200.0, status: "SETTLED" },
+        { id: "TX_105", account: "ACC_9005", amount: 750.0, fee: 75.0, status: "CANCELLED" },
+      ];
+
+      const candidateRowsStep3 = [
+        { id: "TX_101", account: "ACC_9001", amount: 1000.0, fee: 100.0, status: "SETTLED" },
+        { id: "TX_103", account: "ACC_9003", amount: 400.0, fee: 40.0, status: "SETTLED" },
+        { id: "TX_104", account: "ACC_9004", amount: 12000.0, fee: 1200.0, status: "SETTLED" },
+      ];
+
+      const makeStepOutput = (stepId: string, rows: Record<string, unknown>[], hash: string) => ({
+        stepId,
+        status: "SUCCESS" as const,
+        rowCount: rows.length,
+        columnCount: Object.keys(rows[0] || {}).length,
+        durationMs: 5,
+        schema: {
+          version: "1.0.0" as const,
+          columns: Object.keys(rows[0] || {}).map((c, i) => ({
+            name: c,
+            dataType: (c === "amount" || c === "fee" ? "DOUBLE" : "VARCHAR") as any,
+            nullable: true,
+            ordinalPosition: i,
+          })),
+          primaryKeys: ["id"],
+        },
+        tableName: `probe_${stepId}`,
+        previewRows: rows,
+        contentHash: hash,
+        multisetHash: hash,
+        definitionHash: `def_${stepId}`,
+      });
+
+      const baselineExecution: PipelineExecutionResult = {
+        version: "1.0.0",
+        executionId: `run_base_${Date.now()}`,
+        pipelineId: "browser_forensic_pipeline",
+        status: "COMPLETED",
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        durationMs: 45,
+        stepResults: {
+          step_1_ingest: makeStepOutput("step_1_ingest", sourceRows, "hash_s1_clean"),
+          step_2_compute_fee: makeStepOutput("step_2_compute_fee", baselineRowsStep2, "hash_s2_clean"),
+          step_3_filter_settled: makeStepOutput("step_3_filter_settled", baselineRowsStep3, "hash_s3_clean"),
+        },
+        topologicalOrder: ["step_1_ingest", "step_2_compute_fee", "step_3_filter_settled"],
+        checkpoints: [],
+      };
+
+      const candidateExecution: PipelineExecutionResult = {
+        version: "1.0.0",
+        executionId: `run_cand_${Date.now()}`,
+        pipelineId: "browser_forensic_pipeline",
+        status: "COMPLETED",
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        durationMs: 48,
+        stepResults: {
+          step_1_ingest: makeStepOutput("step_1_ingest", sourceRows, "hash_s1_clean"),
+          step_2_compute_fee: makeStepOutput("step_2_compute_fee", candidateRowsStep2, "hash_s2_faulted"),
+          step_3_filter_settled: makeStepOutput("step_3_filter_settled", candidateRowsStep3, "hash_s3_faulted"),
+        },
+        topologicalOrder: ["step_1_ingest", "step_2_compute_fee", "step_3_filter_settled"],
+        checkpoints: [],
+      };
+
+      const report = await ForensicInvestigationService.runInvestigation({
+        investigationId: `probe_${Date.now()}`,
+        title: "Browser Forensic Probe: Fee Arithmetic Mutation",
+        baseline: baselineExecution,
+        target: candidateExecution,
+        pipeline: probePipeline,
+        config: { primaryKey: ["id"] },
+        stepDataBaseline: {
+          step_1_ingest: sourceRows,
+          step_2_compute_fee: baselineRowsStep2,
+          step_3_filter_settled: baselineRowsStep3,
+        },
+        stepDataTarget: {
+          step_1_ingest: sourceRows,
+          step_2_compute_fee: candidateRowsStep2,
+          step_3_filter_settled: candidateRowsStep3,
+        },
+      });
+
+      onSelectInvestigation(report.investigation);
+      await loadInvestigations();
+    } catch (err: any) {
+      setError(err?.message || "Failed to execute in-browser forensic probe.");
+    } finally {
+      setIsExecutingProbe(false);
     }
   };
 
@@ -105,8 +295,34 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
         </div>
         <h2 className="text-xl font-bold text-zinc-100 font-mono">No Active Investigation</h2>
         <p className="text-xs text-zinc-400 max-w-md mt-2 font-mono leading-relaxed">
-          Launch a demonstration scenario from the <strong>Demo Sandbox</strong> or ingest a CSV dataset to initiate forensic comparison and lineage analysis.
+          Launch a demonstration scenario from the <strong>Demo Sandbox</strong> or run an in-browser forensic probe to initiate forensic comparison and lineage analysis.
         </p>
+
+        {/* Action Button: Run Browser Forensic Probe */}
+        <div className="mt-6 flex items-center gap-3">
+          <button
+            data-testid="run-browser-probe"
+            onClick={handleRunBrowserProbe}
+            disabled={isExecutingProbe}
+            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-zinc-950 font-mono font-bold text-xs flex items-center gap-2 shadow-lg hover:shadow-emerald-900/30 transition-all disabled:opacity-50"
+          >
+            {isExecutingProbe ? (
+              <>
+                <RotateCcw className="w-3.5 h-3.5 animate-spin" /> Running Forensic Engine...
+              </>
+            ) : (
+              <>
+                <Play className="w-3.5 h-3.5 fill-current" /> Run In-Browser Forensic Probe
+              </>
+            )}
+          </button>
+        </div>
+
+        {error && (
+          <div className="mt-4 p-3 rounded-lg bg-rose-950/80 border border-rose-800 text-xs font-mono text-rose-200">
+            {error}
+          </div>
+        )}
 
         {investigationsList.length > 0 && (
           <div className="mt-8 flex flex-col gap-2 w-full max-w-md text-left">
