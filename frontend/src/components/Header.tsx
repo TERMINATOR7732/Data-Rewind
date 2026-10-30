@@ -43,24 +43,24 @@ export const Header: React.FC<HeaderProps> = ({
   const isConnected = health !== null && health.status === "ok";
 
   const navItems: { id: WorkbenchTab; label: string; fullSuffix?: string; icon: React.ReactNode }[] = [
-    { id: "demo", label: "Demo Sandbox", icon: <Activity className="w-4 h-4 flex-shrink-0" /> },
-    { id: "csv", label: "CSV Ingestion", icon: <FileSpreadsheet className="w-4 h-4 flex-shrink-0" /> },
+    { id: "demo", label: "Demo Sandbox", icon: <Activity className="w-3.5 h-3.5 2xl:w-4 2xl:h-4 flex-shrink-0" /> },
+    { id: "csv", label: "CSV Ingestion", icon: <FileSpreadsheet className="w-3.5 h-3.5 2xl:w-4 2xl:h-4 flex-shrink-0" /> },
     {
       id: "investigate",
       label: "Investigation",
       fullSuffix: " & Lineage",
-      icon: <GitCompare className="w-4 h-4 flex-shrink-0" />,
+      icon: <GitCompare className="w-3.5 h-3.5 2xl:w-4 2xl:h-4 flex-shrink-0" />,
     },
-    { id: "verify", label: "Fix Verification", icon: <ShieldCheck className="w-4 h-4 flex-shrink-0" /> },
-    { id: "reports", label: "Report Studio", icon: <FileText className="w-4 h-4 flex-shrink-0" /> },
-    { id: "developer", label: "Developer Mode", icon: <Code2 className="w-4 h-4 flex-shrink-0" /> },
-    { id: "settings", label: "Workspace", icon: <HardDrive className="w-4 h-4 flex-shrink-0" /> },
+    { id: "verify", label: "Fix Verification", icon: <ShieldCheck className="w-3.5 h-3.5 2xl:w-4 2xl:h-4 flex-shrink-0" /> },
+    { id: "reports", label: "Report Studio", icon: <FileText className="w-3.5 h-3.5 2xl:w-4 2xl:h-4 flex-shrink-0" /> },
+    { id: "developer", label: "Developer Mode", icon: <Code2 className="w-3.5 h-3.5 2xl:w-4 2xl:h-4 flex-shrink-0" /> },
+    { id: "settings", label: "Workspace", icon: <HardDrive className="w-3.5 h-3.5 2xl:w-4 2xl:h-4 flex-shrink-0" /> },
   ];
 
   return (
     <header className="border-b border-zinc-800/80 bg-zinc-900/95 backdrop-blur-md sticky top-0 z-40 w-full">
-      <div className="w-full px-3 sm:px-4 xl:px-2 2xl:px-6">
-        <div className="flex flex-wrap xl:flex-nowrap items-center justify-between min-h-[4rem] py-2 xl:py-0 gap-y-2.5 gap-x-2 w-full">
+      <div className="w-full px-2 sm:px-4 xl:px-2 2xl:px-6">
+        <div className="flex flex-wrap xl:flex-nowrap items-center justify-between min-h-[4rem] py-2 xl:py-0 gap-y-2.5 gap-x-1.5 xl:gap-x-1 2xl:gap-x-2 w-full">
           {/* Logo & Tagline (Top-Left) */}
           <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
             <Logo size={28} className="w-7 h-7 flex-shrink-0" />
@@ -81,7 +81,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Navigation Tabs - Arranged horizontally in single row, responsive wrapping on tablet/mobile */}
           <nav
-            className="order-3 xl:order-2 w-full xl:w-auto flex items-center justify-start xl:justify-center gap-1 2xl:gap-1.5 overflow-x-auto xl:overflow-x-visible py-1 xl:py-0 scrollbar-none min-w-0"
+            className="order-3 xl:order-2 w-full xl:w-auto flex items-center justify-start xl:justify-center gap-0.5 2xl:gap-1.5 overflow-x-auto xl:overflow-x-visible py-1 xl:py-0 scrollbar-none min-w-0"
             aria-label="Workbench navigation"
           >
             {navItems.map((item) => {
@@ -91,7 +91,7 @@ export const Header: React.FC<HeaderProps> = ({
                   key={item.id}
                   onClick={() => onTabChange(item.id)}
                   title={item.fullSuffix ? `${item.label}${item.fullSuffix}` : item.label}
-                  className={`flex items-center gap-1.5 px-2 2xl:px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap flex-shrink-0 ${
+                  className={`flex items-center gap-1 2xl:gap-1.5 px-1.5 xl:px-1.5 2xl:px-2.5 py-1.5 text-[11px] 2xl:text-xs font-medium rounded-lg transition-colors whitespace-nowrap flex-shrink-0 ${
                     active
                       ? "bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700"
                       : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850"
@@ -114,7 +114,7 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={onRefreshHealth}
               disabled={healthLoading}
               title="Click to refresh backend connection status"
-              className={`flex items-center gap-1.5 px-2 2xl:px-2.5 py-1.5 rounded-lg text-xs font-mono border transition-all ${
+              className={`flex items-center gap-1 sm:gap-1.5 px-1.5 xl:px-2 2xl:px-2.5 py-1.5 rounded-lg text-xs font-mono border transition-all ${
                 isConnected
                   ? "bg-emerald-950/40 border-emerald-800/60 text-emerald-300 hover:bg-emerald-900/40"
                   : "bg-rose-950/40 border-rose-800/60 text-rose-300 hover:bg-rose-900/40"
@@ -143,7 +143,7 @@ export const Header: React.FC<HeaderProps> = ({
             {onStartTour && (
               <button
                 onClick={onStartTour}
-                className="flex items-center gap-1.5 px-2.5 2xl:px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-800 hover:bg-zinc-750 text-zinc-100 border border-zinc-700 hover:border-emerald-500/50 transition-all shadow-sm focus-visible:ring-2 focus-visible:ring-emerald-500"
+                className="flex items-center gap-1 sm:gap-1.5 px-2 xl:px-2.5 2xl:px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-800 hover:bg-zinc-750 text-zinc-100 border border-zinc-700 hover:border-emerald-500/50 transition-all shadow-sm focus-visible:ring-2 focus-visible:ring-emerald-500"
                 title="Start Guided Interactive Tour"
                 aria-label="Guided Tour"
               >
