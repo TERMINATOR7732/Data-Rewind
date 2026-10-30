@@ -38,7 +38,7 @@ test.describe('Browser-Side Persistence, Replay & Verification Journey', () => {
 
     // 6. Inspect Report Studio controls
     await expect(page.locator('text=Forensic Report Studio (SPEC-MOD-05 §2)')).toBeVisible();
-    await expect(page.locator('text=Spreadsheet-Safe CSV')).toBeVisible();
+    await expect(page.locator('text=Spreadsheet-Safe CSV').first()).toBeVisible();
     await expect(page.locator('text=Raw Bit-for-Bit CSV')).toBeVisible();
     await expect(page.locator('text=Markdown Dossier')).toBeVisible();
     await expect(page.locator('text=Machine JSON')).toBeVisible();

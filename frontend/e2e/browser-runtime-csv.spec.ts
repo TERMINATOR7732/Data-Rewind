@@ -21,11 +21,11 @@ test.describe('Browser-First DuckDB-Wasm Runtime E2E', () => {
     await page.getByRole('button', { name: 'CSV Ingestion' }).click();
     await expect(page.locator('text=Ingest Raw CSV & Inspect Schemas')).toBeVisible();
 
-    // Verify Engine Switcher defaults to Browser Wasm or click Browser Wasm
-    const browserWasmBtn = page.getByRole('button', { name: /Browser Wasm/i });
-    await expect(browserWasmBtn).toBeVisible();
-    await browserWasmBtn.click();
-    await expect(page.locator('text=DuckDB-Wasm 1.29 (Web Worker)')).toBeVisible();
+    // Verify Engine Switcher defaults to Browser (Recommended)
+    const browserBtn = page.getByRole('button', { name: /Browser/i });
+    await expect(browserBtn).toBeVisible();
+    await browserBtn.click();
+    await expect(page.locator('text=Process CSV files directly in your browser')).toBeVisible();
 
     // Select valid CSV file
     const validCsvPath = path.resolve(__dirname, '../../tests/fixtures/e2e/valid_orders.csv');
@@ -79,8 +79,8 @@ test.describe('Browser-First DuckDB-Wasm Runtime E2E', () => {
     await page.goto('/');
     await page.getByRole('button', { name: 'CSV Ingestion' }).click();
 
-    // Ensure Browser Wasm mode is active
-    await page.getByRole('button', { name: /Browser Wasm/i }).click();
+    // Ensure Browser mode is active
+    await page.getByRole('button', { name: /Browser/i }).click();
 
     const oversizedCsvPath = path.resolve(__dirname, '../../tests/fixtures/e2e/oversized_cell.csv');
     await page.setInputFiles('#csv-file-input', oversizedCsvPath);

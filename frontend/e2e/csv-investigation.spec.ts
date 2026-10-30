@@ -17,7 +17,9 @@ test.describe('CSV Ingestion & Schema Inspector Journeys', () => {
 
     // Navigate to CSV Ingestion tab
     await page.getByRole('button', { name: 'CSV Ingestion' }).click();
+    await expect(page.locator('text=Your data is processed in your browser')).toBeVisible();
     await expect(page.locator('text=Ingest Raw CSV & Inspect Schemas')).toBeVisible();
+    await expect(page.locator('text=Select your CSV file, choose your investigation settings, and start analyzing.')).toBeVisible();
 
     // Set file input to valid_orders.csv
     const validCsvPath = path.resolve(__dirname, '../../tests/fixtures/e2e/valid_orders.csv');
@@ -59,5 +61,22 @@ test.describe('CSV Ingestion & Schema Inspector Journeys', () => {
 
     // Expect error alert with CELL_LENGTH_LIMIT_EXCEEDED
     await expect(page.locator('text=CELL_LENGTH_LIMIT_EXCEEDED')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('displays visitor-facing engine selector and guides hosted users clearly', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'CSV Ingestion' }).click();
+
+    // Verify header title and description
+    await expect(page.locator('h1', { hasText: 'Your data is processed in your browser' })).toBeVisible();
+    await expect(page.locator('text=Upload a CSV to get started. Data Rewind uses your browser to process and investigate your data.')).toBeVisible();
+
+    // Verify default engine button has Browser (Recommended)
+    const browserBtn = page.getByRole('button', { name: /Browser \(Recommended\)/i });
+    await expect(browserBtn).toBeVisible();
+
+    // Verify Python Backend button exists
+    const backendBtn = page.getByRole('button', { name: /Python Backend/i });
+    await expect(backendBtn).toBeVisible();
   });
 });

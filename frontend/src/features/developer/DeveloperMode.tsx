@@ -88,6 +88,12 @@ interface DeveloperModeProps {
 }
 
 export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = false }) => {
+  const isHostedEnvironment =
+    isHostedDemo ||
+    (typeof window !== "undefined" &&
+      window.location.hostname !== "localhost" &&
+      window.location.hostname !== "127.0.0.1");
+
   const [engineMode, setEngineMode] = useState<"browser" | "backend">("browser");
   const [pipelineJson, setPipelineJson] = useState<string>(DEFAULT_PIPELINE_JSON);
   const [inputRowsJson, setInputRowsJson] = useState<string>(DEFAULT_INPUT_JSON);
@@ -406,8 +412,9 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
                   ? "bg-emerald-600 text-zinc-950 font-bold shadow-sm"
                   : "text-zinc-400 hover:text-zinc-200"
               }`}
+              title="Process pipeline transformations directly in your browser. No server upload required."
             >
-              <Database className="w-3.5 h-3.5" /> Browser Wasm (Local ₹0)
+              <Database className="w-3.5 h-3.5" /> Browser (Recommended)
             </button>
             <button
               onClick={() => setEngineMode("backend")}
@@ -416,23 +423,30 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
                   ? "bg-emerald-600 text-zinc-950 font-bold shadow-sm"
                   : "text-zinc-400 hover:text-zinc-200"
               }`}
+              title="Use the Python processing engine. Backend execution is unavailable in this public demo."
             >
-              <Cpu className="w-3.5 h-3.5" /> Python Backend API
+              <Cpu className="w-3.5 h-3.5" /> Python Backend
             </button>
           </div>
         </div>
       </div>
 
       {/* Hosted Demo Policy Banner for Backend Mode */}
-      {isHostedDemo && engineMode === "backend" && (
+      {isHostedEnvironment && engineMode === "backend" && (
         <div className="bg-amber-950/60 border border-amber-800/80 rounded-xl p-4 text-xs font-mono text-amber-200 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <p className="font-semibold text-amber-100">Hosted Backend Demonstration Policy</p>
+            <p className="font-semibold text-amber-100">Python Backend Notice</p>
             <p className="text-amber-300/90 leading-relaxed font-sans text-xs">
-              Ad-hoc pipeline execution on the remote backend is disabled in this public demonstration environment.
-              Switch to <strong>Browser Wasm (Local ₹0)</strong> mode above to run unrestricted DAG execution
-              directly inside your browser!
+              Backend pipeline execution is unavailable in this public demo. Switch to{" "}
+              <button
+                type="button"
+                onClick={() => setEngineMode("browser")}
+                className="underline font-semibold hover:text-white"
+              >
+                Browser (Recommended)
+              </button>{" "}
+              mode above to run pipeline transformations directly in your browser.
             </p>
           </div>
         </div>
@@ -559,7 +573,7 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
             </span>
             <button
               onClick={handleExecute}
-              disabled={loading || (isHostedDemo && engineMode === "backend")}
+              disabled={loading || (isHostedEnvironment && engineMode === "backend")}
               className="px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-zinc-950 text-xs font-mono font-bold flex items-center gap-1.5 disabled:opacity-50"
             >
               <Play className="w-3.5 h-3.5 fill-current" />

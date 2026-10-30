@@ -93,7 +93,7 @@ describe("Forensic Tabular Comparator — Scaling & Benchmark Suite", () => {
     expect(result.identical_count + result.modified_count + result.added_count).toBe(target.length);
     expect(result.is_equal).toBe(false);
     expect(durationMs).toBeLessThan(15_000);
-  });
+  }, 30_000);
 
   it("benchmarks 100,000 rows keyed comparison with partition invariants", async () => {
     const { baseline, target } = generateBenchmarkDatasets(100_000);

@@ -16,9 +16,9 @@ test.describe('Browser-Side Pipeline DAG Execution E2E', () => {
     await page.getByRole('button', { name: 'Developer Mode' }).click();
     await expect(page.locator('text=Declarative Pipeline Manifest Workbench')).toBeVisible();
 
-    // Verify Engine Switcher defaults to Browser Wasm
-    const browserWasmBtn = page.getByRole('button', { name: /Browser Wasm/i });
-    await expect(browserWasmBtn).toBeVisible();
+    // Verify Engine Switcher defaults to Browser (Recommended)
+    const browserBtn = page.getByRole('button', { name: /Browser/i });
+    await expect(browserBtn).toBeVisible();
 
     // Trigger DAG Validation
     const validateBtn = page.getByRole('button', { name: 'Validate DAG' });

@@ -111,7 +111,14 @@ const AppContent: React.FC = () => {
         )}
 
         {activeTab === "csv" && (
-          <CSVInvestigation isHostedDemo={health?.profile === "hosted_demo"} />
+          <CSVInvestigation
+            isHostedDemo={
+              health?.profile === "hosted_demo" ||
+              (typeof window !== "undefined" &&
+                window.location.hostname !== "localhost" &&
+                window.location.hostname !== "127.0.0.1")
+            }
+          />
         )}
 
         {activeTab === "investigate" && (
@@ -131,7 +138,14 @@ const AppContent: React.FC = () => {
         {activeTab === "reports" && <ReportStudio initialDossierId={reportDossierId} />}
 
         {activeTab === "developer" && (
-          <DeveloperMode isHostedDemo={health?.profile === "hosted_demo"} />
+          <DeveloperMode
+            isHostedDemo={
+              health?.profile === "hosted_demo" ||
+              (typeof window !== "undefined" &&
+                window.location.hostname !== "localhost" &&
+                window.location.hostname !== "127.0.0.1")
+            }
+          />
         )}
 
         {activeTab === "settings" && <WorkspaceSettings />}

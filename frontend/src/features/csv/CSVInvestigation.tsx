@@ -52,6 +52,12 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
 }) => {
   const { navigateToInvestigation } = useInvestigationContext();
 
+  const isHostedEnvironment =
+    isHostedDemo ||
+    (typeof window !== "undefined" &&
+      window.location.hostname !== "localhost" &&
+      window.location.hostname !== "127.0.0.1");
+
   // Engine toggle: Default to browser engine for client-side local-first execution
   const [engine, setEngine] = useState<ExecutionEngine>("browser");
 
@@ -147,7 +153,7 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
         // --- BROWSER ENGINE (DUCKDB-WASM) ---
         const runtime = runtimeRef.current;
         if (!runtime.isReady()) {
-          setProgress({ stage: "Initializing DuckDB-Wasm Engine", percentComplete: 15 });
+          setProgress({ stage: "Preparing browser processing engine", percentComplete: 15 });
           await runtime.initialize();
         }
 
@@ -234,9 +240,9 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
         if (onDatasetReady) onDatasetReady(metadata.datasetId);
       } else {
         // --- BACKEND ENGINE (FASTAPI 127.0.0.1:8000) ---
-        if (isHostedDemo) {
+        if (isHostedEnvironment) {
           setError(
-            "Backend server uploads are disabled in this hosted demo. Switch to 'Browser Engine (DuckDB-Wasm)' to run client-side analytics."
+            "Backend uploads are unavailable in this public demo. Please select 'Browser (Recommended)' above to process your CSV file directly in your browser."
           );
           setUploading(false);
           return;
@@ -250,7 +256,11 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
         setPreviewData(prev);
       }
     } catch (err: any) {
-      if (err instanceof RuntimeError) {
+      if (err instanceof ApiClientError && (err.code === "FEATURE_RESTRICTED_IN_DEMO" || err.statusCode === 403)) {
+        setError(
+          "Backend uploads are unavailable in this public demo. Please select 'Browser (Recommended)' above to process your CSV file directly in your browser."
+        );
+      } else if (err instanceof RuntimeError) {
         setError(`${err.code}: ${err.message}${err.remediation ? ` — Remediation: ${err.remediation}` : ""}`);
       } else if (err instanceof ApiClientError) {
         setError(`${err.code}: ${err.message}`);
@@ -529,62 +539,81 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
             <FileSpreadsheet className="w-4 h-4" /> CSV Ingestion & Forensic Pipeline Builder
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-100 sm:text-3xl">
-            Ingest Raw CSV & Inspect Schemas
+            Your data is processed in your browser
           </h1>
-          <p className="text-sm text-zinc-400 leading-relaxed">
-            Upload RFC 4180 CSV datasets. Ingest client-side with <strong className="text-zinc-200">DuckDB-Wasm</strong>.
-            Construct deterministic multi-step pipelines with the 12 canonical transformations, save baseline runs ($R_0$), and compare modified candidate runs ($R_1$).
+          <p className="text-sm text-zinc-300 leading-relaxed">
+            Upload a CSV to get started. Data Rewind uses your browser to process and investigate your data. No backend upload is required.
           </p>
+          <p className="text-xs text-zinc-400 font-medium">
+            Select your CSV file, choose your investigation settings, and start analyzing.
+          </p>
+          <div className="text-[11px] font-mono text-zinc-500 pt-1">
+            Workspace: Ingest Raw CSV & Inspect Schemas • 10 Deterministic Operations • Reversible Lineage
+          </div>
         </div>
 
         {/* Engine Switcher */}
-        <div className="flex flex-col gap-2 bg-zinc-950 p-3.5 rounded-xl border border-zinc-800 self-start md:self-auto min-w-[260px]">
-          <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 flex items-center gap-1.5 font-bold">
-            <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> Execution Engine
-          </span>
+        <div className="flex flex-col gap-2.5 bg-zinc-950 p-3.5 rounded-xl border border-zinc-800 self-start md:self-auto min-w-[280px] max-w-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 flex items-center gap-1.5 font-bold">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> Execution Engine
+            </span>
+            <span className="text-[10px] font-mono text-emerald-400/90 font-medium">
+              {engine === "browser" ? "Browser Active" : "Backend Selected"}
+            </span>
+          </div>
           <div className="grid grid-cols-2 gap-1.5 p-1 bg-zinc-900 rounded-lg border border-zinc-800 text-xs font-mono">
             <button
               type="button"
               onClick={() => setEngine("browser")}
-              className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md font-medium transition-colors ${
+              className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md font-medium transition-colors text-center ${
                 engine === "browser"
                   ? "bg-emerald-600 text-zinc-950 font-bold shadow"
                   : "text-zinc-400 hover:text-zinc-200"
               }`}
-              title="Runs DuckDB-Wasm inside an isolated Web Worker (zero server dependencies)"
+              title="Process CSV files directly in your browser. No server upload required."
             >
-              <Cpu className="w-3.5 h-3.5" />
-              Browser Wasm
+              <Cpu className="w-3.5 h-3.5 flex-shrink-0" />
+              Browser (Recommended)
             </button>
             <button
               type="button"
               onClick={() => setEngine("backend")}
-              className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md font-medium transition-colors ${
+              className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md font-medium transition-colors text-center ${
                 engine === "backend"
                   ? "bg-emerald-600 text-zinc-950 font-bold shadow"
                   : "text-zinc-400 hover:text-zinc-200"
               }`}
-              title="Routes queries to Python FastAPI backend at 127.0.0.1:8000"
+              title="Use the Python processing engine. Backend uploads are unavailable in this public demo."
             >
-              <Server className="w-3.5 h-3.5" />
-              Backend API
+              <Server className="w-3.5 h-3.5 flex-shrink-0" />
+              Python Backend
             </button>
           </div>
-          <div className="text-[10px] font-mono text-zinc-400 flex items-center gap-1">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            {engine === "browser" ? "DuckDB-Wasm 1.29 (Web Worker)" : "FastAPI Native (127.0.0.1:8000)"}
-          </div>
+          <p className="text-[11px] text-zinc-400 leading-tight">
+            {engine === "browser"
+              ? "Process CSV files directly in your browser. No server upload required."
+              : "Use the Python processing engine. Backend uploads are unavailable in this public demo."}
+          </p>
         </div>
       </div>
 
       {/* Hosted Demo Policy Notice */}
-      {isHostedDemo && engine === "backend" && (
+      {isHostedEnvironment && engine === "backend" && (
         <div className="bg-amber-950/60 border border-amber-800/80 rounded-xl p-4 text-xs font-mono text-amber-200 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <p className="font-semibold text-amber-100">Hosted Demonstration Backend Notice</p>
+            <p className="font-semibold text-amber-100">Python Backend Notice</p>
             <p className="text-amber-300/90 leading-relaxed font-sans text-xs">
-              Backend uploads are disabled on public serverless deployments. Switch to <strong>Browser Wasm</strong> above to ingest CSVs and run DuckDB queries directly in your browser with zero server costs!
+              Backend uploads are unavailable in this public demo. Switch to{" "}
+              <button
+                type="button"
+                onClick={() => setEngine("browser")}
+                className="underline font-semibold hover:text-white"
+              >
+                Browser (Recommended)
+              </button>{" "}
+              above to process your CSV file directly in your browser without uploading to a server.
             </p>
           </div>
         </div>
