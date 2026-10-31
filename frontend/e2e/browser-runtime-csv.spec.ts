@@ -27,9 +27,14 @@ test.describe('Browser-First DuckDB-Wasm Runtime E2E', () => {
     await browserBtn.click();
     await expect(page.locator('text=Process CSV files directly in your browser')).toBeVisible();
 
+    // Switch to Mode 2: Single CSV & Pipeline Builder
+    const pipelineBuilderTab = page.getByTestId('tab-pipeline-builder');
+    await expect(pipelineBuilderTab).toBeVisible();
+    await pipelineBuilderTab.click();
+
     // Select valid CSV file
     const validCsvPath = path.resolve(__dirname, '../../tests/fixtures/e2e/valid_orders.csv');
-    await page.setInputFiles('#csv-file-input', validCsvPath);
+    await page.setInputFiles('#single-csv-file-input', validCsvPath);
 
     // Verify file name display
     await expect(page.locator('text=valid_orders.csv')).toBeVisible();
@@ -55,8 +60,8 @@ test.describe('Browser-First DuckDB-Wasm Runtime E2E', () => {
     await expect(page.getByText(/First \d+ Rows Preview/)).toBeVisible();
     await expect(page.locator('text=CUST-001').first()).toBeVisible();
 
-    // Execute analytical SQL transformation (filter predicate amount > 10.0)
-    const runStepBtn = page.getByRole('button', { name: /Run Step/i });
+    // Execute analytical SQL transformation
+    const runStepBtn = page.getByTestId('execute-baseline-run-btn');
     await expect(runStepBtn).toBeVisible();
     await runStepBtn.click();
 

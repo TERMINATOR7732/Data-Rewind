@@ -12,7 +12,7 @@ test.describe('Application Startup & Shell Journeys', () => {
 
     // 1. Branding & Header verification
     await expect(page.getByText('DATA REWIND', { exact: true })).toBeVisible();
-    await expect(page.locator('text=Understand the past. Verify the present.')).toBeVisible();
+    await expect(page.locator('header').getByText('Understand the past. Verify the present.')).toBeVisible();
     await expect(page.locator('text=v0.1.0').first()).toBeVisible();
 
     // 2. Live backend connectivity status indicator
@@ -20,8 +20,8 @@ test.describe('Application Startup & Shell Journeys', () => {
 
     // 3. Navigation tabs verification
     const tabs = [
-      { name: 'Demo Sandbox', heading: 'Find where your data pipeline went wrong.' },
-      { name: 'CSV Ingestion', heading: 'Ingest Raw CSV & Inspect Schemas' },
+      { name: 'Demo Sandbox', heading: 'In-Browser Data Pipeline Forensics & Reproducibility' },
+      { name: 'CSV Ingestion', heading: 'Compare Two CSV Versions (Baseline vs Candidate)' },
       { name: 'Developer Mode', heading: 'Declarative Pipeline Manifest Workbench' },
       { name: 'Workspace', heading: 'Workspace Storage & Data Privacy' },
     ];

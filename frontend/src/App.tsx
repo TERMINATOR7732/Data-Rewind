@@ -33,6 +33,7 @@ const AppContent: React.FC = () => {
     navigateToInvestigation,
     navigateToVerification,
     navigateToReports,
+    navigateToCSV,
   } = useInvestigationContext();
 
   // Onboarding Guided Tour state
@@ -102,15 +103,16 @@ const AppContent: React.FC = () => {
 
       {/* Main Workbench Body */}
       <main className="flex-1 w-full pb-16">
-        {activeTab === "demo" && (
+        <div className={activeTab === "demo" ? "block" : "hidden"}>
           <DemoHub
             onInvestigationLoaded={navigateToInvestigation}
             onDossierLoaded={navigateToVerification}
             onStartTour={() => setShowTour(true)}
+            onNavigateToCSV={navigateToCSV}
           />
-        )}
+        </div>
 
-        {activeTab === "csv" && (
+        <div className={activeTab === "csv" ? "block" : "hidden"}>
           <CSVInvestigation
             isHostedDemo={
               health?.profile === "hosted_demo" ||
@@ -119,25 +121,27 @@ const AppContent: React.FC = () => {
                 window.location.hostname !== "127.0.0.1")
             }
           />
-        )}
+        </div>
 
-        {activeTab === "investigate" && (
+        <div className={activeTab === "investigate" ? "block" : "hidden"}>
           <InvestigationView
             currentInvestigation={currentInvestigation}
             onSelectInvestigation={setCurrentInvestigation}
           />
-        )}
+        </div>
 
-        {activeTab === "verify" && (
+        <div className={activeTab === "verify" ? "block" : "hidden"}>
           <VerificationHub
             currentDossier={currentDossier}
             onNavigateToReports={navigateToReports}
           />
-        )}
+        </div>
 
-        {activeTab === "reports" && <ReportStudio initialDossierId={reportDossierId} />}
+        <div className={activeTab === "reports" ? "block" : "hidden"}>
+          <ReportStudio initialDossierId={reportDossierId} />
+        </div>
 
-        {activeTab === "developer" && (
+        <div className={activeTab === "developer" ? "block" : "hidden"}>
           <DeveloperMode
             isHostedDemo={
               health?.profile === "hosted_demo" ||
@@ -146,9 +150,11 @@ const AppContent: React.FC = () => {
                 window.location.hostname !== "127.0.0.1")
             }
           />
-        )}
+        </div>
 
-        {activeTab === "settings" && <WorkspaceSettings />}
+        <div className={activeTab === "settings" ? "block" : "hidden"}>
+          <WorkspaceSettings />
+        </div>
       </main>
 
       {/* Professional Engineering Footer */}

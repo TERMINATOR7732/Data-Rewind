@@ -30,8 +30,11 @@ export class StructuredExplainer {
   public static buildStructuredFinding(params: BuildStructuredFindingParams): StructuredFinding {
     const { finding, ctx, diff, blastRadius } = params;
     const stepId = ctx.step_id;
-    const operation = ctx.operation || "TRANSFORMATION";
-    const datasetName = ctx.input_dataset_name || "source_table";
+    const isIngestion = ctx.is_ingestion_node || stepId === "csv_ingest" || stepId.includes("ingest");
+    const operation = ctx.operation && ctx.operation !== "TRANSFORMATION"
+      ? ctx.operation
+      : (isIngestion ? "CSV Data Ingestion" : "Pipeline Transformation");
+    const datasetName = ctx.input_dataset_name || (isIngestion ? "Uploaded Source CSV" : "Pipeline Node Data");
     const diffRes = diff || ctx.diff_result;
 
     const baseRows = diffRes?.baseline_row_count ?? 0;

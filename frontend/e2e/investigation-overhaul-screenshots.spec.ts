@@ -24,25 +24,20 @@ test.describe('Investigation Correctness & Explainability Live Verification', ()
   });
 
   test('captures live screenshot of the five-question explainability panel and DAG', async ({ page }) => {
-    // 1. Navigate to home
+    // 1. Navigate to home (DemoHub)
     await page.goto('/');
 
-    // 2. Go to Investigation tab
-    const investigateTab = page.getByRole('button', { name: /^Investigation/i });
-    await expect(investigateTab).toBeVisible();
-    await investigateTab.click();
+    // 2. Trigger Forensic Investigation for SCN-01 from DemoHub
+    const runInvestigationBtn = page.getByRole('button', { name: /Run investigation/i });
+    await expect(runInvestigationBtn).toBeVisible();
+    await runInvestigationBtn.click();
 
-    // 3. Trigger In-Browser Forensic Probe
-    const runProbeBtn = page.getByTestId('run-browser-probe');
-    await expect(runProbeBtn).toBeVisible();
-    await runProbeBtn.click();
-
-    // 4. Wait for Investigation Dossier to be fully populated
+    // 3. Wait for Investigation Dossier to be fully populated
     await expect(page.locator('text=Forensic Investigation Dossier')).toBeVisible({ timeout: 15000 });
     const evidencePanel = page.locator('[data-tour="evidence-panel"]');
     await expect(evidencePanel).toBeVisible();
 
-    // 5. Verify the Five Questions are rendered
+    // 4. Verify the Five Questions are rendered
     await expect(evidencePanel.locator('text=1. What Went Wrong?')).toBeVisible();
     await expect(evidencePanel.locator('text=2. Where Did It Go Wrong?')).toBeVisible();
     await expect(evidencePanel.locator('text=3. What Is The Evidence?')).toBeVisible();
@@ -55,7 +50,7 @@ test.describe('Investigation Correctness & Explainability Live Verification', ()
       fullPage: true,
     });
 
-    // 6. Expand Technical Details accordion
+    // 5. Expand Technical Details accordion
     const technicalBtn = page.getByRole('button', { name: /Technical Details/i });
     if (await technicalBtn.isVisible()) {
       await technicalBtn.click();
@@ -68,7 +63,7 @@ test.describe('Investigation Correctness & Explainability Live Verification', ()
       });
     }
 
-    // 7. Inspect DAG canvas
+    // 6. Inspect DAG canvas
     const dagCanvas = page.locator('text=Pipeline DAG Lineage & Divergence Canvas');
     await expect(dagCanvas).toBeVisible();
     await expect(page.locator('text=First Divergence (EOD)')).toBeVisible();

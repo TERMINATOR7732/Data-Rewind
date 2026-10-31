@@ -9,6 +9,7 @@ import {
   Layers,
   Play,
   Plus,
+  RefreshCw,
   Server,
   Table,
   Trash2,
@@ -61,12 +62,23 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
   // Engine toggle: Default to browser engine for client-side local-first execution
   const [engine, setEngine] = useState<ExecutionEngine>("browser");
 
+  // Mode selection: "compare" (Dual CSV Comparison) or "pipeline" (Single CSV Pipeline Builder)
+  const [csvMode, setCsvMode] = useState<"compare" | "pipeline">("compare");
+
+  // Baseline File State (and shared primary dataset)
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState<boolean>(false);
   const [progress, setProgress] = useState<ProgressPayload | null>(null);
   const [uploadResult, setUploadResult] = useState<DatasetUploadResponse | null>(null);
   const [previewData, setPreviewData] = useState<DatasetPreviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Candidate File State for Two-File Comparison Mode
+  const [candidateFile, setCandidateFile] = useState<File | null>(null);
+  const [candidateUploadResult, setCandidateUploadResult] = useState<DatasetUploadResponse | null>(null);
+  const [candidatePreviewData, setCandidatePreviewData] = useState<DatasetPreviewResponse | null>(null);
+  const [candidateLoading, setCandidateLoading] = useState<boolean>(false);
+  const [isComparingDirect, setIsComparingDirect] = useState<boolean>(false);
 
   // Multi-step Pipeline Builder state
   const [pipelineSteps, setPipelineSteps] = useState<PipelineStepConfig[]>([
@@ -231,8 +243,20 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
         setUploadResult(unifiedUploadResult);
         setPreviewData(unifiedPreviewData);
 
-        // Auto-select first column as default comparison key if available
-        if (mappedColumns.length > 0) {
+        // Auto-select comparison key (or match with candidate if loaded)
+        if (candidateUploadResult) {
+          const baseCols = mappedColumns.map((c) => c.name);
+          const candCols = candidateUploadResult.columns.map((c) => c.name);
+          const common = baseCols.filter((c) => candCols.includes(c));
+          const probableKey = common.find(
+            (c) => /^(id|order_id|tx_id|transaction_id|cust_id|customer_id|user_id)$/i.test(c) || c.endsWith("_id")
+          );
+          if (probableKey) {
+            setComparisonKey(probableKey);
+          } else if (common.length > 0) {
+            setComparisonKey(common[0]);
+          }
+        } else if (mappedColumns.length > 0) {
           setComparisonKey(mappedColumns[0].name);
         }
 
@@ -293,6 +317,309 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
     } finally {
       setUploading(false);
       setProgress(null);
+    }
+  };
+
+  const handleResetBaseline = () => {
+    setFile(null);
+    setUploadResult(null);
+    setPreviewData(null);
+    setPipelineOutcome(null);
+    setOutputRows([]);
+    setOutputColumns([]);
+    setBaselineExecution(null);
+    setBaselinePipeline(null);
+  };
+
+  const handleResetCandidate = () => {
+    setCandidateFile(null);
+    setCandidateUploadResult(null);
+    setCandidatePreviewData(null);
+  };
+
+  const handleCandidateFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      await handleCandidateIngest(e.target.files[0]);
+    }
+  };
+
+  const handleCandidateDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      await handleCandidateIngest(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleCandidateIngest = async (candFile: File) => {
+    if (candFile.size > 50_000_000) {
+      setError("Candidate file exceeds the 50 MB local ingestion limit.");
+      return;
+    }
+    if (!candFile.name.toLowerCase().endsWith(".csv")) {
+      setError("Only RFC 4180 .csv files are supported.");
+      return;
+    }
+
+    try {
+      setCandidateLoading(true);
+      setError(null);
+      setCandidateFile(candFile);
+
+      const runtime = runtimeRef.current;
+      if (!runtime.isReady()) {
+        await runtime.initialize();
+      }
+
+      const buffer = new Uint8Array(await candFile.arrayBuffer());
+
+      let shortHash = "";
+      try {
+        const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        shortHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 10);
+      } catch {
+        shortHash = Math.random().toString(36).slice(2, 10);
+      }
+
+      const cleanBase = candFile.name
+        .replace(/\.csv$/i, "")
+        .replace(/[^a-zA-Z0-9_]/g, "_")
+        .toLowerCase();
+
+      const sanitizedTableName = `raw_cand_${cleanBase}_${shortHash}`;
+
+      const metadata = await runtime.importCsv(sanitizedTableName, buffer, {
+        header: true,
+      });
+      metadata.datasetId = sanitizedTableName;
+
+      try {
+        await storageRef.current.saveDataset(metadata);
+      } catch (storageErr) {
+        console.warn("IndexedDB persistence warning:", storageErr);
+      }
+
+      const previewResult = await runtime.executeQuery<Record<string, unknown>>(
+        `SELECT * FROM "${sanitizedTableName}" LIMIT 50;`
+      );
+
+      const mappedColumns = metadata.schema.columns.map((col) => ({
+        name: col.name,
+        data_type: col.dataType.toLowerCase(),
+        nullable: col.nullable,
+        ordinal_position: col.ordinalPosition,
+      }));
+
+      const candUploadResult: DatasetUploadResponse = {
+        dataset_id: sanitizedTableName,
+        filename: candFile.name,
+        row_count: metadata.rowCount,
+        column_count: metadata.columnCount,
+        byte_size: metadata.byteSize,
+        sha256_hash: metadata.sha256Hash,
+        columns: mappedColumns,
+      };
+
+      const candPreviewData: DatasetPreviewResponse = {
+        dataset_id: sanitizedTableName,
+        filename: candFile.name,
+        row_count: metadata.rowCount,
+        column_count: metadata.columnCount,
+        columns: mappedColumns,
+        sample_rows: previewResult.rows,
+      };
+
+      setCandidateUploadResult(candUploadResult);
+      setCandidatePreviewData(candPreviewData);
+
+      // Auto-detect common key if baseline is already loaded
+      if (uploadResult) {
+        const baseColNames = uploadResult.columns.map((c) => c.name);
+        const candColNames = mappedColumns.map((c) => c.name);
+        const common = baseColNames.filter((c) => candColNames.includes(c));
+        const probableKey = common.find(
+          (c) => /^(id|order_id|tx_id|transaction_id|cust_id|customer_id|user_id)$/i.test(c) || c.endsWith("_id")
+        );
+        if (probableKey) {
+          setComparisonKey(probableKey);
+        } else if (common.length > 0) {
+          setComparisonKey(common[0]);
+        }
+      }
+    } catch (err: any) {
+      setError(err?.message || "Failed to ingest candidate CSV file.");
+    } finally {
+      setCandidateLoading(false);
+    }
+  };
+
+  const handleDirectCSVComparison = async () => {
+    if (!uploadResult || !candidateUploadResult) return;
+
+    try {
+      setIsComparingDirect(true);
+      setError(null);
+
+      const runtime = runtimeRef.current;
+      if (!runtime.isReady()) {
+        await runtime.initialize();
+      }
+
+      // 1. Fetch rows from DuckDB tables
+      const baseResult = await runtime.executeQuery<Record<string, unknown>>(
+        `SELECT * FROM "${uploadResult.dataset_id}";`
+      );
+      const candResult = await runtime.executeQuery<Record<string, unknown>>(
+        `SELECT * FROM "${candidateUploadResult.dataset_id}";`
+      );
+
+      const baseRows = baseResult.rows;
+      const candRows = candResult.rows;
+
+      const baseCols = uploadResult.columns.map((c) => c.name);
+      const candCols = candidateUploadResult.columns.map((c) => c.name);
+      const commonCols = baseCols.filter((c) => candCols.includes(c));
+
+      // 2. Build PipelineExecutionResult for Baseline and Target
+      const makeStepResult = (
+        stepId: string,
+        tableName: string,
+        rows: Record<string, unknown>[],
+        hash: string,
+        columns: typeof uploadResult.columns
+      ) => ({
+        stepId,
+        status: "SUCCESS" as const,
+        rowCount: rows.length,
+        columnCount: columns.length,
+        durationMs: 5,
+        schema: {
+          version: "1.0.0" as const,
+          columns: columns.map((c, i) => ({
+            name: c.name,
+            dataType: c.data_type.toUpperCase() as any,
+            nullable: true,
+            ordinalPosition: i,
+          })),
+          primaryKeys: comparisonKey ? [comparisonKey] : [],
+        },
+        tableName,
+        previewRows: rows.slice(0, 50),
+        contentHash: hash,
+        multisetHash: hash,
+        definitionHash: `def_${stepId}`,
+      });
+
+      const baselineExec: PipelineExecutionResult = {
+        version: EXECUTION_CONTRACT_VERSION,
+        executionId: `run_base_${Date.now()}`,
+        pipelineId: `pipeline_${uploadResult.dataset_id}`,
+        status: "COMPLETED",
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        durationMs: 12,
+        stepResults: {
+          csv_dataset: makeStepResult(
+            "csv_dataset",
+            uploadResult.dataset_id,
+            baseRows,
+            uploadResult.sha256_hash,
+            uploadResult.columns
+          ),
+        },
+        topologicalOrder: ["csv_dataset"],
+        checkpoints: [],
+      };
+
+      const candidateExec: PipelineExecutionResult = {
+        version: EXECUTION_CONTRACT_VERSION,
+        executionId: `run_cand_${Date.now()}`,
+        pipelineId: `pipeline_${candidateUploadResult.dataset_id}`,
+        status: "COMPLETED",
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        durationMs: 12,
+        stepResults: {
+          csv_dataset: makeStepResult(
+            "csv_dataset",
+            candidateUploadResult.dataset_id,
+            candRows,
+            candidateUploadResult.sha256_hash,
+            candidateUploadResult.columns
+          ),
+        },
+        topologicalOrder: ["csv_dataset"],
+        checkpoints: [],
+      };
+
+      const comparisonPipeline: PipelineDefinition = {
+        version: EXECUTION_CONTRACT_VERSION,
+        pipelineId: `csv_comparison_${Date.now()}`,
+        name: `CSV Direct Comparison: ${uploadResult.filename} vs ${candidateUploadResult.filename}`,
+        nodes: [
+          {
+            nodeId: "csv_dataset",
+            operationType: "select_columns",
+            parameters: {
+              columns: commonCols,
+              primary_keys: comparisonKey ? [comparisonKey] : [],
+            },
+            inputNodeIds: [],
+          },
+        ],
+        edges: [],
+        sourceDatasets: {
+          csv_dataset: `${uploadResult.filename} vs ${candidateUploadResult.filename}`,
+        },
+      };
+
+      const executor: QueryExecutor = {
+        query: (sql: string, params?: unknown[]) => runtime.executeQuery(sql, params),
+        getSchema: (tbl: string) => runtime.getSchema(tbl),
+        getRowCount: (tbl: string) => runtime.getRowCount(tbl),
+      };
+
+      // 3. Execute Tabular and Forensic Investigation
+      const report = await ForensicInvestigationService.runInvestigation({
+        investigationId: `inv_csv_${Date.now()}`,
+        title: `CSV Comparison: ${uploadResult.filename} vs ${candidateUploadResult.filename}`,
+        baseline: baselineExec,
+        target: candidateExec,
+        pipeline: comparisonPipeline,
+        config: {
+          primaryKey: comparisonKey ? [comparisonKey] : undefined,
+        },
+        stepDataBaseline: {
+          csv_dataset: baseRows,
+        },
+        stepDataTarget: {
+          csv_dataset: candRows,
+        },
+        executor,
+      });
+
+      // 4. Save to IndexedDB
+      try {
+        await storageRef.current.saveInvestigation({
+          investigationId: report.investigation.investigation_id,
+          workspaceId: "default",
+          title: report.investigation.title,
+          baselineRunId: report.investigation.baseline_run_id,
+          faultedRunId: report.investigation.target_run_id,
+          status: "ACTIVE",
+          createdAt: report.investigation.created_at || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (saveErr) {
+        console.warn("Could not persist direct CSV investigation to IndexedDB:", saveErr);
+      }
+
+      // 5. Navigate to Investigation View
+      navigateToInvestigation(report.investigation);
+    } catch (err: any) {
+      setError(err?.message || "Failed to compare CSV datasets directly.");
+    } finally {
+      setIsComparingDirect(false);
     }
   };
 
@@ -657,85 +984,498 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
         </div>
       )}
 
-      {/* File Dropzone */}
-      <div
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={handleDrop}
-        className="bg-zinc-900/60 border-2 border-dashed border-zinc-700/80 hover:border-emerald-500 rounded-2xl p-8 flex flex-col items-center justify-center gap-4 text-center transition-colors cursor-pointer shadow-lg"
-      >
-        <div className="h-12 w-12 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-emerald-400">
-          <FileUp className="w-6 h-6" />
-        </div>
-        <div>
-          <p className="text-sm font-semibold text-zinc-200">
-            {file ? file.name : "Drag & drop a CSV file here, or click to browse"}
-          </p>
-          <p className="text-xs text-zinc-400 mt-1 font-mono">
-            {file ? `${(file.size / 1_000_000).toFixed(2)} MB` : "RFC 4180 compliant CSV files supported (up to 50 MB, 500k rows)"}
-          </p>
-        </div>
+      {/* Workbench Mode Selector */}
+      <div className="flex border-b border-zinc-800 bg-zinc-900/60 rounded-xl p-1 gap-1">
+        <button
+          type="button"
+          data-testid="tab-compare-csv"
+          onClick={() => setCsvMode("compare")}
+          className={`flex-1 py-2.5 px-4 rounded-lg font-mono text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+            csvMode === "compare"
+              ? "bg-emerald-600 text-zinc-950 shadow-md"
+              : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50"
+          }`}
+        >
+          <GitCompare className="w-4 h-4" />
+          <span>Compare Two CSV Versions (Baseline vs Candidate)</span>
+        </button>
 
-        {/* Guardrail Badges */}
-        <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] font-mono text-zinc-400 pt-1">
-          <span className="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700">Max Size: 50 MB</span>
-          <span className="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700">Max Rows: 500k</span>
-          <span className="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700">Max Columns: 100</span>
-          <span className="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700">Max Cell: 4,096 chars</span>
-        </div>
-
-        {/* Progress indicator */}
-        {uploading && progress && (
-          <div className="w-full max-w-md flex flex-col gap-1.5 mt-2">
-            <div className="flex justify-between text-xs font-mono text-zinc-300">
-              <span>{progress.stage}</span>
-              <span>{progress.percentComplete}%</span>
-            </div>
-            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
-              <div
-                className="bg-emerald-500 h-full transition-all duration-200"
-                style={{ width: `${progress.percentComplete}%` }}
-              />
-            </div>
-            {progress.details && (
-              <span className="text-[11px] font-mono text-zinc-400">{progress.details}</span>
-            )}
-          </div>
-        )}
-
-        <input
-          type="file"
-          id="csv-file-input"
-          accept=".csv"
-          onChange={handleFileChange}
-          className="hidden"
-        />
-
-        <div className="flex gap-3 mt-2">
-          <label
-            htmlFor="csv-file-input"
-            className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-mono font-medium cursor-pointer border border-zinc-700"
-          >
-            Choose File
-          </label>
-          <button
-            onClick={handleUpload}
-            disabled={!file || uploading}
-            className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-bold text-xs font-mono disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 shadow-md"
-          >
-            {uploading ? (
-              <>
-                <span className="w-3.5 h-3.5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
-                Ingesting CSV...
-              </>
-            ) : (
-              <>
-                <Upload className="w-4 h-4" />
-                Ingest & Validate
-              </>
-            )}
-          </button>
-        </div>
+        <button
+          type="button"
+          data-testid="tab-pipeline-builder"
+          onClick={() => setCsvMode("pipeline")}
+          className={`flex-1 py-2.5 px-4 rounded-lg font-mono text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+            csvMode === "pipeline"
+              ? "bg-emerald-600 text-zinc-950 shadow-md"
+              : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50"
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          <span>Single CSV & Pipeline Builder (10 Transformations)</span>
+        </button>
       </div>
+
+      {/* ============================================================= */}
+      {/* MODE 1: DUAL CSV DIRECT COMPARISON (BASELINE VS CANDIDATE)     */}
+      {/* ============================================================= */}
+      {csvMode === "compare" && (
+        <div className="flex flex-col gap-6">
+          {/* Dual Dropzone / Metadata Columns */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Slot A: Baseline Dataset (R0) */}
+            <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-6 flex flex-col gap-4 shadow-lg">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+                  <h3 className="font-mono text-sm font-bold text-zinc-100 uppercase tracking-wide">
+                    Baseline Dataset (R₀)
+                  </h3>
+                </div>
+                {uploadResult && (
+                  <button
+                    type="button"
+                    onClick={handleResetBaseline}
+                    className="text-xs font-mono text-zinc-400 hover:text-rose-400 transition-colors flex items-center gap-1"
+                    data-testid="replace-baseline-btn"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Replace Baseline
+                  </button>
+                )}
+              </div>
+
+              <input
+                type="file"
+                id="csv-file-input"
+                data-testid="baseline-file-input"
+                accept=".csv"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+
+              {!uploadResult ? (
+                /* Baseline Upload Dropzone */
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleDrop}
+                  className="border-2 border-dashed border-zinc-700/80 hover:border-emerald-500 rounded-xl p-6 flex flex-col items-center justify-center gap-3 text-center transition-colors cursor-pointer bg-zinc-950/50 min-h-[220px]"
+                >
+                  <FileUp className="w-8 h-8 text-emerald-400" />
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-200">
+                      {file ? file.name : "Select or Drop Baseline CSV (R₀)"}
+                    </p>
+                    <p className="text-xs text-zinc-400 font-mono mt-0.5">
+                      {file ? `${(file.size / 1_000_000).toFixed(2)} MB` : "Reference version (up to 50 MB)"}
+                    </p>
+                  </div>
+
+                  {uploading && progress && (
+                    <div className="w-full max-w-xs flex flex-col gap-1 mt-1 text-[11px] font-mono">
+                      <div className="flex justify-between text-zinc-300">
+                        <span>{progress.stage}</span>
+                        <span>{progress.percentComplete}%</span>
+                      </div>
+                      <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className="bg-emerald-500 h-full transition-all duration-200"
+                          style={{ width: `${progress.percentComplete}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 mt-1">
+                    <label
+                      htmlFor="csv-file-input"
+                      className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-mono font-medium cursor-pointer border border-zinc-700"
+                    >
+                      Choose File
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleUpload}
+                      disabled={!file || uploading}
+                      className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-bold text-xs font-mono disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 shadow-md"
+                    >
+                      {uploading ? (
+                        <>
+                          <span className="w-3.5 h-3.5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
+                          Ingesting...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-4 h-4" />
+                          Ingest & Validate
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Baseline Ingested Card */
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <span className="font-semibold text-zinc-100 font-mono text-xs">
+                        Dataset Ingested: {uploadResult.filename}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono text-zinc-400">
+                      SHA-256: <code className="text-zinc-200">{uploadResult.sha256_hash.slice(0, 10)}...</code>
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                    <div className="bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
+                      <span className="text-zinc-500 block text-[10px]">Rows Parsed</span>
+                      <TabularNum value={uploadResult.row_count} className="text-sm text-emerald-400 font-bold" />
+                    </div>
+                    <div className="bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
+                      <span className="text-zinc-500 block text-[10px]">Columns Inferred</span>
+                      <TabularNum value={uploadResult.column_count} className="text-sm text-zinc-200 font-bold" />
+                    </div>
+                    <div className="bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
+                      <span className="text-zinc-500 block text-[10px]">Preserved Size</span>
+                      <TabularNum value={uploadResult.byte_size} format="bytes" className="text-sm text-zinc-200 font-bold" />
+                    </div>
+                    <div className="bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
+                      <span className="text-zinc-500 block text-[10px]">Storage Status</span>
+                      <span className="text-[11px] text-emerald-400 font-bold block">Persisted</span>
+                    </div>
+                  </div>
+
+                  {/* Schema Pills */}
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[10px] font-mono font-semibold uppercase text-zinc-400">
+                      Schema Columns ({uploadResult.columns.length})
+                    </span>
+                    <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                      {uploadResult.columns.map((c) => (
+                        <span
+                          key={c.name}
+                          className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-950 border border-zinc-800 text-zinc-300"
+                        >
+                          {c.name} <code className="text-emerald-400 uppercase text-[9px]">({c.data_type})</code>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Sample Rows Preview */}
+                  {previewData && previewData.sample_rows.length > 0 && (
+                    <div className="flex flex-col gap-1.5 pt-2 border-t border-zinc-800">
+                      <span className="text-[11px] font-mono font-semibold uppercase text-zinc-400 flex items-center gap-1.5">
+                        <Table className="w-3.5 h-3.5" /> First 50 Rows Preview
+                      </span>
+                      <div className="overflow-auto max-h-48 rounded-lg border border-zinc-800">
+                        <table className="w-full text-left text-[11px] border-collapse font-mono">
+                          <thead className="sticky top-0 bg-zinc-950 text-zinc-400 border-b border-zinc-800">
+                            <tr>
+                              {previewData.columns.map((c) => (
+                                <th key={c.name} className="py-1 px-2 font-semibold text-zinc-300">
+                                  {c.name}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-800/60 bg-zinc-900/50">
+                            {previewData.sample_rows.slice(0, 10).map((row, idx) => (
+                              <tr key={idx} className="hover:bg-zinc-800/40">
+                                {previewData.columns.map((c) => (
+                                  <td key={c.name} className="py-1 px-2 whitespace-nowrap text-zinc-300">
+                                    {row[c.name] === null ? <span className="text-zinc-600">NULL</span> : String(row[c.name])}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Slot B: Candidate Dataset (R1) */}
+            <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-6 flex flex-col gap-4 shadow-lg">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+                  <h3 className="font-mono text-sm font-bold text-zinc-100 uppercase tracking-wide">
+                    Candidate Dataset (R₁)
+                  </h3>
+                </div>
+                {candidateUploadResult && (
+                  <button
+                    type="button"
+                    onClick={handleResetCandidate}
+                    className="text-xs font-mono text-zinc-400 hover:text-rose-400 transition-colors flex items-center gap-1"
+                    data-testid="replace-candidate-btn"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Replace Candidate
+                  </button>
+                )}
+              </div>
+
+              <input
+                type="file"
+                id="candidate-file-input"
+                data-testid="candidate-file-input"
+                accept=".csv"
+                onChange={handleCandidateFileChange}
+                className="hidden"
+              />
+
+              {!candidateUploadResult ? (
+                /* Candidate Upload Dropzone */
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleCandidateDrop}
+                  className="border-2 border-dashed border-zinc-700/80 hover:border-amber-500 rounded-xl p-6 flex flex-col items-center justify-center gap-3 text-center transition-colors cursor-pointer bg-zinc-950/50 min-h-[220px]"
+                >
+                  <FileUp className="w-8 h-8 text-amber-400" />
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-200">
+                      {candidateFile ? candidateFile.name : "Select or Drop Candidate CSV (R₁)"}
+                    </p>
+                    <p className="text-xs text-zinc-400 font-mono mt-0.5">
+                      {candidateFile ? `${(candidateFile.size / 1_000_000).toFixed(2)} MB` : "Comparison version (up to 50 MB)"}
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2 mt-1">
+                    <label
+                      htmlFor="candidate-file-input"
+                      className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-mono font-medium cursor-pointer border border-zinc-700"
+                    >
+                      Choose Candidate
+                    </label>
+                  </div>
+                  {candidateLoading && (
+                    <div className="flex items-center gap-2 text-xs font-mono text-amber-400">
+                      <span className="w-3.5 h-3.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                      <span>Ingesting Candidate into DuckDB...</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Candidate Ingested Card */
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-amber-400" />
+                      <span className="font-semibold text-zinc-100 font-mono text-xs">
+                        Candidate Ingested: {candidateUploadResult.filename}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono text-zinc-400">
+                      SHA-256: <code className="text-zinc-200">{candidateUploadResult.sha256_hash.slice(0, 10)}...</code>
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                    <div className="bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
+                      <span className="text-zinc-500 block text-[10px]">Rows Parsed</span>
+                      <TabularNum value={candidateUploadResult.row_count} className="text-sm text-amber-400 font-bold" />
+                    </div>
+                    <div className="bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
+                      <span className="text-zinc-500 block text-[10px]">Columns Inferred</span>
+                      <TabularNum value={candidateUploadResult.column_count} className="text-sm text-zinc-200 font-bold" />
+                    </div>
+                    <div className="bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
+                      <span className="text-zinc-500 block text-[10px]">Preserved Size</span>
+                      <TabularNum value={candidateUploadResult.byte_size} format="bytes" className="text-sm text-zinc-200 font-bold" />
+                    </div>
+                    <div className="bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
+                      <span className="text-zinc-500 block text-[10px]">Storage Status</span>
+                      <span className="text-[11px] text-amber-400 font-bold block">Persisted</span>
+                    </div>
+                  </div>
+
+                  {/* Schema Pills */}
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[10px] font-mono font-semibold uppercase text-zinc-400">
+                      Schema Columns ({candidateUploadResult.columns.length})
+                    </span>
+                    <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                      {candidateUploadResult.columns.map((c) => (
+                        <span
+                          key={c.name}
+                          className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-950 border border-zinc-800 text-zinc-300"
+                        >
+                          {c.name} <code className="text-amber-400 uppercase text-[9px]">({c.data_type})</code>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Sample Rows Preview */}
+                  {candidatePreviewData && candidatePreviewData.sample_rows.length > 0 && (
+                    <div className="flex flex-col gap-1.5 pt-2 border-t border-zinc-800">
+                      <span className="text-[11px] font-mono font-semibold uppercase text-zinc-400 flex items-center gap-1.5">
+                        <Table className="w-3.5 h-3.5" /> First 50 Rows Preview
+                      </span>
+                      <div className="overflow-auto max-h-48 rounded-lg border border-zinc-800">
+                        <table className="w-full text-left text-[11px] border-collapse font-mono">
+                          <thead className="sticky top-0 bg-zinc-950 text-zinc-400 border-b border-zinc-800">
+                            <tr>
+                              {candidatePreviewData.columns.map((c) => (
+                                <th key={c.name} className="py-1 px-2 font-semibold text-zinc-300">
+                                  {c.name}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-800/60 bg-zinc-900/50">
+                            {candidatePreviewData.sample_rows.slice(0, 10).map((row, idx) => (
+                              <tr key={idx} className="hover:bg-zinc-800/40">
+                                {candidatePreviewData.columns.map((c) => (
+                                  <td key={c.name} className="py-1 px-2 whitespace-nowrap text-zinc-300">
+                                    {row[c.name] === null ? <span className="text-zinc-600">NULL</span> : String(row[c.name])}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Comparison Action & Key Configuration Card */}
+          {uploadResult && candidateUploadResult && (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl">
+              <div className="flex flex-col gap-1.5 max-w-xl">
+                <div className="flex items-center gap-2">
+                  <GitCompare className="w-4 h-4 text-emerald-400" />
+                  <span className="font-mono text-sm font-bold text-zinc-100">
+                    Ready to Compare Datasets Directly
+                  </span>
+                </div>
+                <div className="text-xs font-mono text-zinc-400 flex flex-wrap gap-2">
+                  <span>
+                    Baseline: <strong className="text-zinc-200">{uploadResult.filename}</strong> (
+                    <TabularNum value={uploadResult.row_count} /> rows)
+                  </span>
+                  <span>vs</span>
+                  <span>
+                    Candidate: <strong className="text-zinc-200">{candidateUploadResult.filename}</strong> (
+                    <TabularNum value={candidateUploadResult.row_count} /> rows)
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-xs font-mono pt-1">
+                  <span className="text-zinc-400">Comparison Primary Key:</span>
+                  <select
+                    value={comparisonKey}
+                    onChange={(e) => setComparisonKey(e.target.value)}
+                    className="bg-zinc-950 border border-zinc-700 px-2.5 py-1 rounded text-zinc-200 font-mono text-xs focus:border-emerald-500"
+                  >
+                    <option value="">(Keyless Multiset / Row-by-Row Diff)</option>
+                    {uploadResult.columns
+                      .filter((c) => candidateUploadResult.columns.some((cc) => cc.name === c.name))
+                      .map((c) => (
+                        <option key={c.name} value={c.name}>
+                          {c.name} ({c.data_type})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                data-testid="compare-csv-datasets-btn"
+                onClick={handleDirectCSVComparison}
+                disabled={isComparingDirect}
+                className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-zinc-950 font-mono font-bold text-sm flex items-center gap-2.5 shadow-lg border border-emerald-500 transition-all disabled:opacity-50 whitespace-nowrap"
+              >
+                {isComparingDirect ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
+                    <span>Comparing Datasets in DuckDB...</span>
+                  </>
+                ) : (
+                  <>
+                    <GitCompare className="w-4 h-4" />
+                    <span>Compare Datasets Directly</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ============================================================= */}
+      {/* MODE 2: SINGLE CSV & PIPELINE BUILDER                         */}
+      {/* ============================================================= */}
+      {csvMode === "pipeline" && (
+        <div className="flex flex-col gap-6">
+          {!uploadResult && (
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={handleDrop}
+              className="bg-zinc-900/60 border-2 border-dashed border-zinc-700/80 hover:border-emerald-500 rounded-2xl p-8 flex flex-col items-center justify-center gap-4 text-center transition-colors cursor-pointer shadow-lg"
+            >
+              <div className="h-12 w-12 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-emerald-400">
+                <FileUp className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-zinc-200">
+                  {file ? file.name : "Drag & drop a CSV file here, or click to browse"}
+                </p>
+                <p className="text-xs text-zinc-400 mt-1 font-mono">
+                  {file ? `${(file.size / 1_000_000).toFixed(2)} MB` : "RFC 4180 compliant CSV files supported (up to 50 MB, 500k rows)"}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] font-mono text-zinc-400 pt-1">
+                <span className="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700">Max Size: 50 MB</span>
+                <span className="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700">Max Rows: 500k</span>
+                <span className="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700">Max Columns: 100</span>
+              </div>
+
+              <input
+                type="file"
+                id="single-csv-file-input"
+                accept=".csv"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+
+              <div className="flex gap-3 mt-2">
+                <label
+                  htmlFor="single-csv-file-input"
+                  className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-mono font-medium cursor-pointer border border-zinc-700"
+                >
+                  Choose File
+                </label>
+                <button
+                  onClick={handleUpload}
+                  disabled={!file || uploading}
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-bold text-xs font-mono disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 shadow-md"
+                >
+                  {uploading ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
+                      Ingesting CSV...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" />
+                      Ingest & Validate
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
 
       {/* Dataset Metadata and Schema */}
       {uploadResult && (
@@ -1128,6 +1868,7 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
             <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
               <button
                 type="button"
+                data-testid="execute-baseline-run-btn"
                 onClick={() => handleExecutePipeline(true)}
                 disabled={runningPipeline}
                 className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-bold font-mono text-xs transition-all flex items-center gap-2 shadow-lg disabled:opacity-50"
@@ -1153,6 +1894,7 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
                   </span>
                   <button
                     type="button"
+                    data-testid="execute-candidate-run-btn"
                     onClick={handleRunCandidateAndCompare}
                     disabled={runningPipeline}
                     className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold font-mono text-xs transition-all flex items-center gap-2 shadow-lg hover:shadow-amber-500/20 disabled:opacity-50"
@@ -1213,6 +1955,8 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
               </div>
             )}
           </div>
+        </div>
+      )}
         </div>
       )}
     </div>

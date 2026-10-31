@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from "react";
 import {
   AlertCircle,
+  ArrowRight,
   ChevronRight,
+  GitCompare,
   HelpCircle,
+  Layers,
   Play,
   RotateCcw,
   ShieldCheck,
@@ -20,12 +23,14 @@ interface DemoHubProps {
   onInvestigationLoaded: (inv: Investigation) => void;
   onDossierLoaded: (dossier: ForensicDossier) => void;
   onStartTour?: () => void;
+  onNavigateToCSV?: () => void;
 }
 
 export const DemoHub: React.FC<DemoHubProps> = ({
   onInvestigationLoaded,
   onDossierLoaded,
   onStartTour,
+  onNavigateToCSV,
 }) => {
   const [scenarios, setScenarios] = useState<ScenarioSummary[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>("scn01");
@@ -123,46 +128,42 @@ export const DemoHub: React.FC<DemoHubProps> = ({
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col gap-8 font-sans">
-      {/* 1. Introductory Value Proposition */}
-      <section className="bg-gradient-to-b from-zinc-900 to-zinc-900/80 border border-zinc-800 rounded-2xl p-6 sm:p-8 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6">
+      {/* 1. Value Proposition & Product Identity Banner */}
+      <section className="bg-gradient-to-b from-zinc-900 via-zinc-900 to-zinc-900/90 border border-zinc-800 rounded-2xl p-6 sm:p-8 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="max-w-3xl flex flex-col gap-3">
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-mono uppercase tracking-widest text-emerald-400 font-semibold px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-800/80">
-              Interactive Forensic Sandbox
+            <span className="text-[11px] font-mono uppercase tracking-widest text-emerald-400 font-semibold px-2.5 py-1 rounded bg-emerald-950/80 border border-emerald-800/80">
+              DATA REWIND • Understand the past. Verify the present.
             </span>
-            <span className="text-xs text-zinc-400 hidden sm:inline">• 4 Canonical Scenarios Available</span>
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-100">
-            Find where your data pipeline went wrong.
+            In-Browser Data Pipeline Forensics & Reproducibility
           </h1>
 
-          <p className="text-sm text-zinc-300 leading-relaxed max-w-2xl">
-            Trace unexpected output changes to the pipeline step that caused them. Inspect the evidence, understand the impact, and verify the fix.
+          <p className="text-sm text-zinc-300 leading-relaxed max-w-2xl font-sans">
+            Pinpoint where data pipelines diverge, inspect cell-level diffs, and verify fixes. 
+            Runs 100% locally in your browser using DuckDB-Wasm with zero server uploads and zero cloud costs.
           </p>
 
-          {/* Workflow Sequence Indicator */}
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap pt-2 text-xs font-mono text-zinc-400">
-            <span className="text-zinc-200 font-semibold">Workflow:</span>
-            <span className="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300">
-              1. Pipeline DAG
-            </span>
-            <ChevronRight className="w-3.5 h-3.5 text-zinc-600" />
-            <span className="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300">
-              2. Row Evidence
-            </span>
-            <ChevronRight className="w-3.5 h-3.5 text-zinc-600" />
-            <span className="px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 font-semibold">
-              3. First Divergence (EOD)
-            </span>
-            <ChevronRight className="w-3.5 h-3.5 text-zinc-600" />
-            <span className="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300">
-              4. Impact
-            </span>
-            <ChevronRight className="w-3.5 h-3.5 text-zinc-600" />
-            <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-semibold">
-              5. Verification
-            </span>
+          {/* Complete 8-Stage Lifecycle Flow */}
+          <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap pt-2 text-[11px] font-mono text-zinc-400">
+            <span className="text-zinc-200 font-semibold">Lifecycle:</span>
+            <span className="px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300">Run</span>
+            <ChevronRight className="w-3 h-3 text-zinc-600" />
+            <span className="px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300">Detect</span>
+            <ChevronRight className="w-3 h-3 text-zinc-600" />
+            <span className="px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300">Compare</span>
+            <ChevronRight className="w-3 h-3 text-zinc-600" />
+            <span className="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 font-semibold">Trace (EOD)</span>
+            <ChevronRight className="w-3 h-3 text-zinc-600" />
+            <span className="px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300">Assess Impact</span>
+            <ChevronRight className="w-3 h-3 text-zinc-600" />
+            <span className="px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300">Reproduce</span>
+            <ChevronRight className="w-3 h-3 text-zinc-600" />
+            <span className="px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300">Fix</span>
+            <ChevronRight className="w-3 h-3 text-zinc-600" />
+            <span className="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-semibold">Verify</span>
           </div>
         </div>
 
@@ -176,9 +177,88 @@ export const DemoHub: React.FC<DemoHubProps> = ({
               <Sparkles className="w-4 h-4 text-emerald-400" />
               <span>Take Product Tour</span>
             </button>
-            <span className="text-[11px] text-zinc-400">5 quick steps • 1 min</span>
+            <span className="text-[11px] text-zinc-400 font-mono">5 quick steps • 1 min</span>
           </div>
         )}
+      </section>
+
+      {/* 2. Three Primary Starting Points */}
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {/* Card 1: Compare Two CSV Versions */}
+        <div className="bg-zinc-900/90 border border-zinc-800 hover:border-emerald-500/60 rounded-xl p-5 flex flex-col justify-between gap-4 transition-all shadow-md group">
+          <div className="flex flex-col gap-2.5">
+            <div className="w-10 h-10 rounded-lg bg-emerald-950/80 border border-emerald-800/80 flex items-center justify-center text-emerald-400">
+              <GitCompare className="w-5 h-5" />
+            </div>
+            <h2 className="text-base font-bold text-zinc-100 font-mono">Compare Two CSV Versions</h2>
+            <p className="text-xs text-zinc-400 leading-relaxed font-sans">
+              Directly compare a baseline CSV file against a candidate CSV file. Detect schema drift, altered cell values, and added or deleted rows.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onNavigateToCSV}
+            className="w-full py-2.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-bold font-mono text-xs flex items-center justify-center gap-2 transition-colors shadow-sm"
+          >
+            <span>Compare CSV Files</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* Card 2: Build & Investigate a Pipeline */}
+        <div className="bg-zinc-900/90 border border-zinc-800 hover:border-emerald-500/60 rounded-xl p-5 flex flex-col justify-between gap-4 transition-all shadow-md group">
+          <div className="flex flex-col gap-2.5">
+            <div className="w-10 h-10 rounded-lg bg-sky-950/80 border border-sky-800/80 flex items-center justify-center text-sky-400">
+              <Layers className="w-5 h-5" />
+            </div>
+            <h2 className="text-base font-bold text-zinc-100 font-mono">Build & Investigate Pipeline</h2>
+            <p className="text-xs text-zinc-400 leading-relaxed font-sans">
+              Build a multi-step transformation pipeline in your browser with DuckDB, mutate operations, and trace divergence to its exact root cause.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onNavigateToCSV}
+            className="w-full py-2.5 px-3 rounded-lg bg-zinc-800 hover:bg-zinc-750 text-zinc-100 font-medium font-mono text-xs flex items-center justify-center gap-2 border border-zinc-700 transition-colors"
+          >
+            <span>Open Pipeline Builder</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* Card 3: Explore Interactive Demo Scenarios */}
+        <div className="bg-zinc-900/90 border border-zinc-800 hover:border-emerald-500/60 rounded-xl p-5 flex flex-col justify-between gap-4 transition-all shadow-md group">
+          <div className="flex flex-col gap-2.5">
+            <div className="w-10 h-10 rounded-lg bg-amber-950/80 border border-amber-800/80 flex items-center justify-center text-amber-400">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <h2 className="text-base font-bold text-zinc-100 font-mono">Explore Interactive Demos</h2>
+            <p className="text-xs text-zinc-400 leading-relaxed font-sans">
+              Step through real-world scenarios: arithmetic fee mutations, filter predicate drift, and unhandled data loss with verified fixes.
+            </p>
+          </div>
+          <a
+            href="#demo-scenarios-section"
+            className="w-full py-2.5 px-3 rounded-lg bg-zinc-800 hover:bg-zinc-750 text-amber-300 font-medium font-mono text-xs flex items-center justify-center gap-2 border border-zinc-700 transition-colors"
+          >
+            <span>Select Scenario Below</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </a>
+        </div>
+      </section>
+
+      {/* 3. Trust & Architecture Guarantee Banner */}
+      <section className="bg-zinc-950 border border-zinc-800/80 rounded-xl py-3 px-5 flex flex-wrap items-center justify-between gap-3 text-xs font-mono text-zinc-400">
+        <div className="flex items-center gap-2 text-zinc-300">
+          <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          <span className="font-semibold text-zinc-200">Local-First Trust Guarantee:</span>
+          <span>100% In-Browser DuckDB-Wasm Execution</span>
+        </div>
+        <div className="flex items-center gap-3 text-[11px] text-zinc-500">
+          <span>• Zero Cloud Data Transmission</span>
+          <span>• Strict ₹0 Operation</span>
+          <span>• Full Lineage Isolation</span>
+        </div>
       </section>
 
       {/* Error Alert */}
@@ -206,7 +286,7 @@ export const DemoHub: React.FC<DemoHubProps> = ({
           Loading demonstration scenarios...
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div id="demo-scenarios-section" className="grid grid-cols-1 lg:grid-cols-3 gap-6 scroll-mt-6">
           {/* Left Column: Scenario Selector */}
           <div className="flex flex-col gap-3 min-w-0" data-tour="scenario-selector">
             <div className="flex items-center justify-between px-1">

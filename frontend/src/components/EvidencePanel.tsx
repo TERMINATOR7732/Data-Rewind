@@ -37,6 +37,11 @@ export const EvidencePanel: React.FC<EvidencePanelProps> = ({
     ? blast_radius.tainted_step_ids?.includes(currentStepId)
     : false;
 
+  const isClean = Boolean(
+    (diffSummary && diffSummary.is_equal) ||
+    (!eod_result.primary_eod_step && investigation.status === "VERIFIED_EQUIVALENT")
+  );
+
   // Resolve or synthesize structured finding for the active step
   const activeFinding: StructuredFinding = React.useMemo(() => {
     // 1. Look for pre-computed finding matching active step
@@ -72,14 +77,32 @@ export const EvidencePanel: React.FC<EvidencePanelProps> = ({
       : "bg-emerald-950 text-emerald-300 border-emerald-800";
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col gap-5 shadow-lg font-sans text-zinc-100">
+    <div
+      data-tour="evidence-panel"
+      className={`rounded-xl p-5 flex flex-col gap-5 shadow-lg font-sans text-zinc-100 ${
+        isClean ? "bg-zinc-900 border border-emerald-800/80" : "bg-zinc-900 border border-zinc-800"
+      }`}
+    >
       {/* Panel Header */}
       <div className="border-b border-zinc-800 pb-3 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <FileSearch className="w-4 h-4 text-emerald-400" />
-          <h3 className="text-sm font-semibold font-mono tracking-tight text-zinc-100">
-            Forensic Evidence & Root Cause Analysis
-          </h3>
+          {isClean ? (
+            <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+          ) : (
+            <FileSearch className="w-4 h-4 text-amber-400" />
+          )}
+          <div>
+            <h3 className="text-sm font-semibold font-mono tracking-tight text-zinc-100">
+              {isClean
+                ? "Pipeline Equivalence Verified — No Differences Detected"
+                : "Forensic Evidence & Root Cause Analysis"}
+            </h3>
+            {isClean && (
+              <p className="text-[11px] text-zinc-400 font-sans">
+                Zero row deltas, zero field modifications, and matching cryptographic multiset hashes confirm pipeline equivalence.
+              </p>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs px-2.5 py-1 rounded bg-zinc-800 text-zinc-300 font-mono border border-zinc-700">
@@ -95,7 +118,7 @@ export const EvidencePanel: React.FC<EvidencePanelProps> = ({
               Downstream Tainted
             </span>
           )}
-          {!isEOD && !isTainted && diffSummary?.is_equal && (
+          {isClean && (
             <span className="text-[11px] px-2 py-0.5 rounded font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
               Verified Clean
             </span>
@@ -105,11 +128,23 @@ export const EvidencePanel: React.FC<EvidencePanelProps> = ({
 
       {/* 1. What Went Wrong? (Plain Language, Zero Jargon) */}
       <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-400 font-mono">
-          <HelpCircle className="w-3.5 h-3.5 text-amber-400" /> 1. What Went Wrong?
+        <div className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider font-mono ${
+          isClean ? "text-emerald-400" : "text-amber-400"
+        }`}>
+          {isClean ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <HelpCircle className="w-3.5 h-3.5 text-amber-400" />}
+          <span>1. What Went Wrong?</span>
+          {isClean && (
+            <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold ml-1">
+              Zero Divergence
+            </span>
+          )}
         </div>
-        <div className="bg-zinc-950 p-4 rounded-lg border border-zinc-800 text-xs text-zinc-200 leading-relaxed font-sans">
-          <p className="font-medium text-sm text-zinc-100">{activeFinding.what_went_wrong}</p>
+        <div className={`p-4 rounded-lg border text-xs leading-relaxed font-sans ${
+          isClean ? "bg-zinc-950 border-emerald-900/60 text-zinc-200" : "bg-zinc-950 border-zinc-800 text-zinc-200"
+        }`}>
+          <p className={`font-medium text-sm ${isClean ? "text-emerald-300" : "text-zinc-100"}`}>
+            {activeFinding.what_went_wrong}
+          </p>
         </div>
       </div>
 
@@ -117,6 +152,7 @@ export const EvidencePanel: React.FC<EvidencePanelProps> = ({
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-sky-400 font-mono">
           <MapPin className="w-3.5 h-3.5 text-sky-400" /> 2. Where Did It Go Wrong?
+          {isClean && <span className="text-[10px] text-zinc-400 font-normal lowercase">(comparison scope)</span>}
         </div>
         <div className="bg-zinc-950 p-3.5 rounded-lg border border-zinc-800 grid grid-cols-2 gap-2.5 text-xs font-mono">
           <div className="flex flex-col gap-0.5">
@@ -220,8 +256,11 @@ export const EvidencePanel: React.FC<EvidencePanelProps> = ({
       {/* 4. Why Does It Matter? (Consequence & Downstream Blast Radius) */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-rose-400 font-mono">
-            <AlertOctagon className="w-3.5 h-3.5 text-rose-400" /> 4. Why Does It Matter? (Downstream Blast Radius & Impact)
+          <div className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider font-mono ${
+            isClean ? "text-emerald-400" : "text-rose-400"
+          }`}>
+            {isClean ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <AlertOctagon className="w-3.5 h-3.5 text-rose-400" />}
+            <span>4. Why Does It Matter?</span>
           </div>
           <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold border ${riskBadgeColor}`}>
             Risk: {activeFinding.impact.risk_level}
@@ -232,7 +271,7 @@ export const EvidencePanel: React.FC<EvidencePanelProps> = ({
           <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-900 text-[11px] font-mono">
             <div className="flex flex-col">
               <span className="text-zinc-500 text-[10px]">Graph Taint:</span>
-              <span className="text-rose-400 font-bold">
+              <span className={isClean ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
                 <TabularNum value={blast_radius.blast_radius_ratio} format="percentage" /> (
                 <TabularNum value={blast_radius.tainted_nodes_count} /> /{" "}
                 <TabularNum value={blast_radius.total_graph_nodes} /> nodes)
@@ -243,7 +282,7 @@ export const EvidencePanel: React.FC<EvidencePanelProps> = ({
               <span className="text-zinc-200 truncate">
                 {activeFinding.impact.affected_terminal_sinks.length > 0
                   ? activeFinding.impact.affected_terminal_sinks.join(", ")
-                  : "0 Sinks Tainted"}
+                  : "0 Sinks Tainted (Clean)"}
               </span>
             </div>
           </div>

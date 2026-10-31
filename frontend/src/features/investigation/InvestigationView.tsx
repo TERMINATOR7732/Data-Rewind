@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from "react";
 import {
   AlertTriangle,
+  CheckCircle2,
   Eye,
   FileText,
   GitCompare,
-  Play,
-  RotateCcw,
+  Layers,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import { api, ApiClientError } from "../../lib/api";
 import {
@@ -20,7 +21,6 @@ import { LineageGraph } from "../../components/LineageGraph";
 import { StatusBadge } from "../../components/StatusBadge";
 import { TabularNum } from "../../components/TabularNum";
 import { ForensicInvestigationService } from "../../runtime/forensics/index";
-import { PipelineDefinition, PipelineExecutionResult } from "../../runtime/contracts/index";
 import { useInvestigationContext } from "../context/InvestigationContext";
 
 interface InvestigationViewProps {
@@ -39,7 +39,6 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [diffPage, setDiffPage] = useState<StepDiffPage | null>(null);
   const [diffLoading, setDiffLoading] = useState<boolean>(false);
-  const [isExecutingProbe, setIsExecutingProbe] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   // Load list of saved investigations (merging local in-browser + server)
@@ -134,166 +133,6 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
     }
   };
 
-  const handleRunBrowserProbe = async () => {
-    try {
-      setIsExecutingProbe(true);
-      setError(null);
-
-      const probePipeline: PipelineDefinition = {
-        version: "1.0.0",
-        pipelineId: "browser_forensic_pipeline",
-        name: "Browser Forensic Probe Pipeline",
-        nodes: [
-          {
-            nodeId: "step_1_ingest",
-            operationType: "select_columns",
-            parameters: { columns: ["id", "account", "amount", "fee", "status"], primary_keys: ["id"] },
-            inputNodeIds: [],
-          },
-          {
-            nodeId: "step_2_compute_fee",
-            operationType: "derive_column",
-            parameters: { target_column: "fee", expression: "amount * 0.05", primary_keys: ["id"] },
-            inputNodeIds: ["step_1_ingest"],
-          },
-          {
-            nodeId: "step_3_filter_settled",
-            operationType: "filter_rows",
-            parameters: { predicate: "status = 'SETTLED'", primary_keys: ["id"] },
-            inputNodeIds: ["step_2_compute_fee"],
-          },
-        ],
-        edges: [
-          { sourceNodeId: "step_1_ingest", targetNodeId: "step_2_compute_fee" },
-          { sourceNodeId: "step_2_compute_fee", targetNodeId: "step_3_filter_settled" },
-        ],
-        sourceDatasets: { step_1_ingest: "raw_settlements" },
-      };
-
-      // Raw source data
-      const sourceRows = [
-        { id: "TX_101", account: "ACC_9001", amount: 1000.0, fee: 50.0, status: "SETTLED" },
-        { id: "TX_102", account: "ACC_9002", amount: 2500.0, fee: 125.0, status: "PENDING" },
-        { id: "TX_103", account: "ACC_9003", amount: 400.0, fee: 20.0, status: "SETTLED" },
-        { id: "TX_104", account: "ACC_9004", amount: 12000.0, fee: 600.0, status: "SETTLED" },
-        { id: "TX_105", account: "ACC_9005", amount: 750.0, fee: 37.5, status: "CANCELLED" },
-      ];
-
-      // Baseline run: legitimate fee calculation (fee = amount * 0.05)
-      const baselineRowsStep2 = [
-        { id: "TX_101", account: "ACC_9001", amount: 1000.0, fee: 50.0, status: "SETTLED" },
-        { id: "TX_102", account: "ACC_9002", amount: 2500.0, fee: 125.0, status: "PENDING" },
-        { id: "TX_103", account: "ACC_9003", amount: 400.0, fee: 20.0, status: "SETTLED" },
-        { id: "TX_104", account: "ACC_9004", amount: 12000.0, fee: 600.0, status: "SETTLED" },
-        { id: "TX_105", account: "ACC_9005", amount: 750.0, fee: 37.5, status: "CANCELLED" },
-      ];
-
-      const baselineRowsStep3 = [
-        { id: "TX_101", account: "ACC_9001", amount: 1000.0, fee: 50.0, status: "SETTLED" },
-        { id: "TX_103", account: "ACC_9003", amount: 400.0, fee: 20.0, status: "SETTLED" },
-        { id: "TX_104", account: "ACC_9004", amount: 12000.0, fee: 600.0, status: "SETTLED" },
-      ];
-
-      // Candidate run: corrupted / mutated fee calculation (fee = amount * 0.10)
-      const candidateRowsStep2 = [
-        { id: "TX_101", account: "ACC_9001", amount: 1000.0, fee: 100.0, status: "SETTLED" },
-        { id: "TX_102", account: "ACC_9002", amount: 2500.0, fee: 250.0, status: "PENDING" },
-        { id: "TX_103", account: "ACC_9003", amount: 400.0, fee: 40.0, status: "SETTLED" },
-        { id: "TX_104", account: "ACC_9004", amount: 12000.0, fee: 1200.0, status: "SETTLED" },
-        { id: "TX_105", account: "ACC_9005", amount: 750.0, fee: 75.0, status: "CANCELLED" },
-      ];
-
-      const candidateRowsStep3 = [
-        { id: "TX_101", account: "ACC_9001", amount: 1000.0, fee: 100.0, status: "SETTLED" },
-        { id: "TX_103", account: "ACC_9003", amount: 400.0, fee: 40.0, status: "SETTLED" },
-        { id: "TX_104", account: "ACC_9004", amount: 12000.0, fee: 1200.0, status: "SETTLED" },
-      ];
-
-      const makeStepOutput = (stepId: string, rows: Record<string, unknown>[], hash: string) => ({
-        stepId,
-        status: "SUCCESS" as const,
-        rowCount: rows.length,
-        columnCount: Object.keys(rows[0] || {}).length,
-        durationMs: 5,
-        schema: {
-          version: "1.0.0" as const,
-          columns: Object.keys(rows[0] || {}).map((c, i) => ({
-            name: c,
-            dataType: (c === "amount" || c === "fee" ? "DOUBLE" : "VARCHAR") as any,
-            nullable: true,
-            ordinalPosition: i,
-          })),
-          primaryKeys: ["id"],
-        },
-        tableName: `probe_${stepId}`,
-        previewRows: rows,
-        contentHash: hash,
-        multisetHash: hash,
-        definitionHash: `def_${stepId}`,
-      });
-
-      const baselineExecution: PipelineExecutionResult = {
-        version: "1.0.0",
-        executionId: `run_base_${Date.now()}`,
-        pipelineId: "browser_forensic_pipeline",
-        status: "COMPLETED",
-        startedAt: new Date().toISOString(),
-        completedAt: new Date().toISOString(),
-        durationMs: 45,
-        stepResults: {
-          step_1_ingest: makeStepOutput("step_1_ingest", sourceRows, "hash_s1_clean"),
-          step_2_compute_fee: makeStepOutput("step_2_compute_fee", baselineRowsStep2, "hash_s2_clean"),
-          step_3_filter_settled: makeStepOutput("step_3_filter_settled", baselineRowsStep3, "hash_s3_clean"),
-        },
-        topologicalOrder: ["step_1_ingest", "step_2_compute_fee", "step_3_filter_settled"],
-        checkpoints: [],
-      };
-
-      const candidateExecution: PipelineExecutionResult = {
-        version: "1.0.0",
-        executionId: `run_cand_${Date.now()}`,
-        pipelineId: "browser_forensic_pipeline",
-        status: "COMPLETED",
-        startedAt: new Date().toISOString(),
-        completedAt: new Date().toISOString(),
-        durationMs: 48,
-        stepResults: {
-          step_1_ingest: makeStepOutput("step_1_ingest", sourceRows, "hash_s1_clean"),
-          step_2_compute_fee: makeStepOutput("step_2_compute_fee", candidateRowsStep2, "hash_s2_faulted"),
-          step_3_filter_settled: makeStepOutput("step_3_filter_settled", candidateRowsStep3, "hash_s3_faulted"),
-        },
-        topologicalOrder: ["step_1_ingest", "step_2_compute_fee", "step_3_filter_settled"],
-        checkpoints: [],
-      };
-
-      const report = await ForensicInvestigationService.runInvestigation({
-        investigationId: `probe_${Date.now()}`,
-        title: "Browser Forensic Probe: Fee Arithmetic Mutation",
-        baseline: baselineExecution,
-        target: candidateExecution,
-        pipeline: probePipeline,
-        config: { primaryKey: ["id"] },
-        stepDataBaseline: {
-          step_1_ingest: sourceRows,
-          step_2_compute_fee: baselineRowsStep2,
-          step_3_filter_settled: baselineRowsStep3,
-        },
-        stepDataTarget: {
-          step_1_ingest: sourceRows,
-          step_2_compute_fee: candidateRowsStep2,
-          step_3_filter_settled: candidateRowsStep3,
-        },
-      });
-
-      onSelectInvestigation(report.investigation);
-      await loadInvestigations();
-    } catch (err: any) {
-      setError(err?.message || "Failed to execute in-browser forensic probe.");
-    } finally {
-      setIsExecutingProbe(false);
-    }
-  };
-
   if (!currentInvestigation) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-16 flex flex-col items-center justify-center text-center font-sans">
@@ -301,15 +140,15 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
           <GitCompare className="w-8 h-8" />
         </div>
         <h2 className="text-xl font-bold text-zinc-100 font-mono">No Active Investigation</h2>
-        <p className="text-xs text-zinc-400 max-w-md mt-2 font-mono leading-relaxed">
+        <p className="text-xs text-zinc-400 max-w-lg mt-2 font-mono leading-relaxed">
           {activeDataset ? (
             <>
-              You have an active dataset loaded: <strong className="text-zinc-200">{activeDataset.name}</strong> (
-              <TabularNum value={activeDataset.rowCount} /> rows). Build and compare a pipeline in the CSV tab or run a probe below.
+              Active Dataset loaded: <strong className="text-zinc-200">{activeDataset.name}</strong> (
+              <TabularNum value={activeDataset.rowCount} /> rows). Ingest a candidate file or build transformations in the CSV Workbench to launch an investigation.
             </>
           ) : (
             <>
-              Upload a CSV file or launch a scenario from the Demo Sandbox to compare baseline and candidate pipeline executions.
+              Select an entry point to begin forensic analysis: compare two CSV versions directly, build a transformation pipeline, or explore interactive demo scenarios.
             </>
           )}
         </p>
@@ -317,36 +156,29 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
         {/* Action Buttons */}
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <button
-            data-testid="run-browser-probe"
-            onClick={handleRunBrowserProbe}
-            disabled={isExecutingProbe}
-            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-zinc-950 font-mono font-bold text-xs flex items-center gap-2 border border-emerald-500 transition-all disabled:opacity-50"
+            type="button"
+            data-testid="nav-csv-compare"
+            onClick={navigateToCSV}
+            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-zinc-950 font-mono font-bold text-xs flex items-center gap-2 border border-emerald-500 transition-all shadow-md"
           >
-            {isExecutingProbe ? (
-              <>
-                <RotateCcw className="w-3.5 h-3.5 animate-spin" /> Running Forensic Engine...
-              </>
-            ) : (
-              <>
-                <Play className="w-3.5 h-3.5 fill-current" /> Run In-Browser Forensic Probe
-              </>
-            )}
+            <GitCompare className="w-3.5 h-3.5" /> Compare Two CSV Files
           </button>
 
           <button
             type="button"
             onClick={navigateToCSV}
-            className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-mono font-medium text-xs border border-zinc-700 transition-all"
+            className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-750 text-zinc-200 font-mono font-medium text-xs border border-zinc-700 transition-all flex items-center gap-2"
           >
-            Upload CSV File
+            <Layers className="w-3.5 h-3.5" /> Pipeline Builder
           </button>
 
           <button
             type="button"
+            data-testid="nav-demo-scenarios"
             onClick={navigateToDemo}
-            className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-mono font-medium text-xs border border-zinc-700 transition-all"
+            className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-750 text-zinc-200 font-mono font-medium text-xs border border-zinc-700 transition-all flex items-center gap-2"
           >
-            Explore Demo Scenarios
+            <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> Explore Demo Scenarios
           </button>
         </div>
 
@@ -412,25 +244,50 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
           </div>
         </div>
 
-        {/* EOD Highlight Card */}
+        {/* EOD Highlight Card / Equivalence Status */}
         <div
           data-tour="eod-card"
-          className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 flex items-center gap-4 min-w-0 sm:min-w-[280px] shadow-inner"
+          className={`p-4 rounded-xl border flex items-center gap-4 min-w-0 sm:min-w-[280px] shadow-inner ${
+            currentInvestigation.status === "VERIFIED_EQUIVALENT" || !eod_result.primary_eod_step
+              ? "bg-zinc-950 border-emerald-800/60"
+              : "bg-zinc-950 border-zinc-800"
+          }`}
         >
-          <div className="p-2.5 rounded-lg bg-amber-950/80 border border-amber-800 text-amber-400 flex items-center justify-center flex-shrink-0">
-            <AlertTriangle className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <span className="text-[10px] font-mono uppercase text-zinc-400 font-bold block truncate">
-              Earliest Observable Divergence
-            </span>
-            <span className="text-sm font-mono font-bold text-amber-300 block truncate" title={eod_result.primary_eod_step || "None"}>
-              {eod_result.primary_eod_step || "None (Identical)"}
-            </span>
-            <span className="text-xs text-zinc-400 block mt-0.5 truncate">
-              Category: <strong className="text-zinc-200">{eod_result.divergence_category}</strong>
-            </span>
-          </div>
+          {currentInvestigation.status === "VERIFIED_EQUIVALENT" || !eod_result.primary_eod_step ? (
+            <>
+              <div className="p-2.5 rounded-lg bg-emerald-950/80 border border-emerald-800 text-emerald-400 flex items-center justify-center flex-shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <span className="text-[10px] font-mono uppercase text-emerald-400 font-bold block truncate">
+                  Verification Status
+                </span>
+                <span className="text-sm font-mono font-bold text-emerald-300 block truncate">
+                  Zero Divergence (Identical)
+                </span>
+                <span className="text-xs text-zinc-400 block mt-0.5 truncate">
+                  Status: <strong className="text-emerald-400">Verified Equivalent</strong>
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="p-2.5 rounded-lg bg-amber-950/80 border border-amber-800 text-amber-400 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <span className="text-[10px] font-mono uppercase text-zinc-400 font-bold block truncate">
+                  Earliest Observable Divergence
+                </span>
+                <span className="text-sm font-mono font-bold text-amber-300 block truncate" title={eod_result.primary_eod_step || "None"}>
+                  {eod_result.primary_eod_step}
+                </span>
+                <span className="text-xs text-zinc-400 block mt-0.5 truncate">
+                  Category: <strong className="text-zinc-200">{eod_result.divergence_category}</strong>
+                </span>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -510,7 +367,7 @@ export const InvestigationView: React.FC<InvestigationViewProps> = ({
           />
         </div>
 
-        <div className="lg:col-span-1 min-w-0" data-tour="evidence-panel">
+        <div className="lg:col-span-1 min-w-0">
           <EvidencePanel investigation={currentInvestigation} selectedStepId={selectedStepId} />
         </div>
       </div>

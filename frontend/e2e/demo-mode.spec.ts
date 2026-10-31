@@ -38,8 +38,10 @@ test.describe('Demo Mode End-to-End Journeys', () => {
 
     // Should transition to Investigation & Lineage tab
     await expect(page.locator('text=Forensic Investigation Dossier')).toBeVisible({ timeout: 15000 });
-    await expect(page.locator('text=Earliest Observable Divergence (EOD)')).toBeVisible();
-    await expect(page.locator('text=ingest_orders').first()).toBeVisible();
+    const eodCard = page.locator('[data-tour="eod-card"]');
+    await expect(eodCard).toBeVisible();
+    await expect(eodCard.getByText('Earliest Observable Divergence')).toBeVisible();
+    await expect(eodCard.getByText('ingest_orders')).toBeVisible();
 
     // Verify Diff Table is displayed with row differences
     await expect(page.getByRole('button', { name: /All Rows/i })).toBeVisible();
