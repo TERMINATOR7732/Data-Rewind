@@ -183,6 +183,13 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
 
   const handleExecute = async () => {
     try {
+      if (isHostedEnvironment && engineMode === "backend") {
+        setError(
+          "Python Backend execution is available in local development. The hosted demo processes pipelines in your browser to keep uploaded data private and maintain zero server-side storage costs. Switch to Browser (Recommended) to continue."
+        );
+        return;
+      }
+
       setLoading(true);
       setError(null);
       setExecutionResult(null);
@@ -300,6 +307,12 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
           unsubscribe();
         }
       } else {
+        if (isHostedEnvironment) {
+          setError(
+            "Python Backend execution is available in local development. The hosted demo processes pipelines in your browser to keep uploaded data private and maintain zero server-side storage costs. Switch to Browser (Recommended) to continue."
+          );
+          return;
+        }
         const res = await api.executePipeline(parsedSteps as TransformationStep[], parsedInputs);
         setExecutionResult(res);
       }
@@ -406,7 +419,10 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
           </span>
           <div className="flex items-center bg-zinc-900 p-1 rounded-md border border-zinc-800">
             <button
-              onClick={() => setEngineMode("browser")}
+              onClick={() => {
+                setEngineMode("browser");
+                setError(null);
+              }}
               className={`px-3 py-1.5 rounded text-xs font-mono font-medium flex items-center gap-1.5 transition-colors ${
                 engineMode === "browser"
                   ? "bg-emerald-600 text-zinc-950 font-bold shadow-sm"
@@ -423,9 +439,19 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
                   ? "bg-emerald-600 text-zinc-950 font-bold shadow-sm"
                   : "text-zinc-400 hover:text-zinc-200"
               }`}
-              title="Use the Python processing engine. Backend execution is unavailable in this public demo."
+              title={
+                isHostedEnvironment
+                  ? "Python Backend execution is available in local development. The hosted demo processes pipelines in your browser."
+                  : "Use the Python processing engine."
+              }
             >
-              <Cpu className="w-3.5 h-3.5" /> Python Backend
+              <Cpu className="w-3.5 h-3.5" />
+              <span>Python Backend</span>
+              {isHostedEnvironment && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-amber-300 font-normal border border-amber-800/60 ml-1">
+                  Local Only
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -433,20 +459,32 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
 
       {/* Hosted Demo Policy Banner for Backend Mode */}
       {isHostedEnvironment && engineMode === "backend" && (
-        <div className="bg-amber-950/60 border border-amber-800/80 rounded-xl p-4 text-xs font-mono text-amber-200 flex items-start gap-3">
+        <div
+          role="alert"
+          aria-live="polite"
+          className="bg-amber-950/60 border border-amber-800/80 rounded-xl p-4 text-xs font-mono text-amber-200 flex items-start gap-3"
+        >
           <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <p className="font-semibold text-amber-100">Python Backend Notice</p>
+            <p className="font-semibold text-amber-100 flex items-center gap-2">
+              <span>Python Backend Notice</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-900/60 text-amber-200 border border-amber-700/80 font-mono">
+                Local Only
+              </span>
+            </p>
             <p className="text-amber-300/90 leading-relaxed font-sans text-xs">
-              Backend pipeline execution is unavailable in this public demo. Switch to{" "}
+              Python Backend execution is available in local development. The hosted demo processes pipelines in your browser to keep uploaded data private and maintain zero server-side storage costs. Switch to{" "}
               <button
                 type="button"
-                onClick={() => setEngineMode("browser")}
-                className="underline font-semibold hover:text-white"
+                onClick={() => {
+                  setEngineMode("browser");
+                  setError(null);
+                }}
+                className="underline font-semibold hover:text-white focus:outline-none focus:ring-1 focus:ring-emerald-400 rounded"
               >
                 Browser (Recommended)
               </button>{" "}
-              mode above to run pipeline transformations directly in your browser.
+              to continue.
             </p>
           </div>
         </div>
@@ -454,12 +492,36 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
 
       {/* Error Alert */}
       {error && (
-        <div className="bg-rose-950/80 border border-rose-800 rounded-lg p-3 text-xs font-mono text-rose-200 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-            <span>{error}</span>
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="bg-rose-950/80 border border-rose-800 rounded-lg p-3 text-xs font-mono text-rose-200 flex items-start justify-between gap-3"
+        >
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <span className="leading-relaxed">{error}</span>
+              {isHostedEnvironment && engineMode === "backend" && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEngineMode("browser");
+                      setError(null);
+                    }}
+                    className="underline text-emerald-300 hover:text-white font-semibold"
+                  >
+                    Switch to Browser (Recommended)
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-          <button onClick={() => setError(null)} className="font-bold text-rose-400 hover:text-rose-200">
+          <button
+            onClick={() => setError(null)}
+            className="font-bold text-rose-400 hover:text-rose-200 ml-2 flex-shrink-0"
+            aria-label="Dismiss error"
+          >
             Dismiss
           </button>
         </div>
@@ -571,14 +633,38 @@ export const DeveloperMode: React.FC<DeveloperModeProps> = ({ isHostedDemo = fal
             <span className="text-xs font-mono font-semibold text-zinc-200 uppercase flex items-center gap-1.5">
               <Terminal className="w-3.5 h-3.5 text-sky-400" /> Input Data Tables (JSON Mock Rows)
             </span>
-            <button
-              onClick={handleExecute}
-              disabled={loading || (isHostedEnvironment && engineMode === "backend")}
-              className="px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-zinc-950 text-xs font-mono font-bold flex items-center gap-1.5 disabled:opacity-50"
-            >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              {loading ? "Running..." : "Execute Pipeline"}
-            </button>
+            <div className="flex items-center gap-2">
+              {isHostedEnvironment && engineMode === "backend" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEngineMode("browser");
+                    setError(null);
+                  }}
+                  className="text-xs font-mono text-emerald-400 hover:underline mr-1"
+                >
+                  Switch to Browser (Recommended)
+                </button>
+              )}
+              <button
+                onClick={handleExecute}
+                disabled={loading || (isHostedEnvironment && engineMode === "backend")}
+                aria-disabled={loading || (isHostedEnvironment && engineMode === "backend")}
+                title={
+                  isHostedEnvironment && engineMode === "backend"
+                    ? "Python Backend execution is available in local development. Switch to Browser (Recommended) to continue."
+                    : undefined
+                }
+                className={`px-4 py-1.5 rounded text-xs font-mono font-bold flex items-center gap-1.5 transition-colors ${
+                  isHostedEnvironment && engineMode === "backend"
+                    ? "bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-60 border border-zinc-700"
+                    : "bg-emerald-600 hover:bg-emerald-500 text-zinc-950 disabled:opacity-50"
+                }`}
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                {loading ? "Running..." : "Execute Pipeline"}
+              </button>
+            </div>
           </div>
           <textarea
             value={inputRowsJson}

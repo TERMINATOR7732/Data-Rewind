@@ -289,7 +289,7 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
         // --- BACKEND ENGINE (FASTAPI 127.0.0.1:8000) ---
         if (isHostedEnvironment) {
           setError(
-            "Backend uploads are unavailable in this public demo. Please select 'Browser (Recommended)' above to process your CSV file directly in your browser."
+            "Python Backend execution is available in local development. The hosted demo processes pipelines in your browser to keep uploaded data private and maintain zero server-side storage costs. Switch to Browser (Recommended) to continue."
           );
           setUploading(false);
           return;
@@ -305,7 +305,7 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
     } catch (err: any) {
       if (err instanceof ApiClientError && (err.code === "FEATURE_RESTRICTED_IN_DEMO" || err.statusCode === 403)) {
         setError(
-          "Backend uploads are unavailable in this public demo. Please select 'Browser (Recommended)' above to process your CSV file directly in your browser."
+          "Python Backend execution is available in local development. The hosted demo processes pipelines in your browser to keep uploaded data private and maintain zero server-side storage costs. Switch to Browser (Recommended) to continue."
         );
       } else if (err instanceof RuntimeError) {
         setError(`${err.code}: ${err.message}${err.remediation ? ` — Remediation: ${err.remediation}` : ""}`);
@@ -934,10 +934,19 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
                   ? "bg-emerald-600 text-zinc-950 font-bold shadow"
                   : "text-zinc-400 hover:text-zinc-200"
               }`}
-              title="Use the Python processing engine. Backend uploads are unavailable in this public demo."
+              title={
+                isHostedEnvironment
+                  ? "Python Backend execution is available in local development. The hosted demo processes pipelines in your browser."
+                  : "Use the Python processing engine."
+              }
             >
               <Server className="w-3.5 h-3.5 flex-shrink-0" />
-              Python Backend
+              <span>Python Backend</span>
+              {isHostedEnvironment && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-amber-300 font-normal border border-amber-800/60 ml-1">
+                  Local Only
+                </span>
+              )}
             </button>
           </div>
           <p className="text-[11px] text-zinc-400 leading-tight">
@@ -950,20 +959,32 @@ export const CSVInvestigation: React.FC<CSVInvestigationProps> = ({
 
       {/* Hosted Demo Policy Notice */}
       {isHostedEnvironment && engine === "backend" && (
-        <div className="bg-amber-950/60 border border-amber-800/80 rounded-xl p-4 text-xs font-mono text-amber-200 flex items-start gap-3">
+        <div
+          role="alert"
+          aria-live="polite"
+          className="bg-amber-950/60 border border-amber-800/80 rounded-xl p-4 text-xs font-mono text-amber-200 flex items-start gap-3"
+        >
           <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <p className="font-semibold text-amber-100">Python Backend Notice</p>
+            <p className="font-semibold text-amber-100 flex items-center gap-2">
+              <span>Python Backend Notice</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-900/60 text-amber-200 border border-amber-700/80 font-mono">
+                Local Only
+              </span>
+            </p>
             <p className="text-amber-300/90 leading-relaxed font-sans text-xs">
-              Backend uploads are unavailable in this public demo. Switch to{" "}
+              Python Backend execution is available in local development. The hosted demo processes pipelines in your browser to keep uploaded data private and maintain zero server-side storage costs. Switch to{" "}
               <button
                 type="button"
-                onClick={() => setEngine("browser")}
-                className="underline font-semibold hover:text-white"
+                onClick={() => {
+                  setEngine("browser");
+                  setError(null);
+                }}
+                className="underline font-semibold hover:text-white focus:outline-none focus:ring-1 focus:ring-emerald-400 rounded"
               >
                 Browser (Recommended)
               </button>{" "}
-              above to process your CSV file directly in your browser without uploading to a server.
+              to continue.
             </p>
           </div>
         </div>

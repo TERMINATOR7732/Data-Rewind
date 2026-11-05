@@ -31,8 +31,8 @@ describe("Hosted CSV Experience & Visitor Copy Standards", () => {
 
   const BACKEND_RESTRICTION_NOTICE = {
     title: "Python Backend Notice",
-    body: "Backend uploads are unavailable in this public demo. Switch to Browser (Recommended) above to process your CSV file directly in your browser without uploading to a server.",
-    error: "Backend uploads are unavailable in this public demo. Please select 'Browser (Recommended)' above to process your CSV file directly in your browser.",
+    body: "Python Backend execution is available in local development. The hosted demo processes pipelines in your browser to keep uploaded data private and maintain zero server-side storage costs. Switch to Browser (Recommended) to continue.",
+    error: "Python Backend execution is available in local development. The hosted demo processes pipelines in your browser to keep uploaded data private and maintain zero server-side storage costs. Switch to Browser (Recommended) to continue.",
   };
 
   const PROHIBITED_PUBLIC_JARGON = [
@@ -72,9 +72,9 @@ describe("Hosted CSV Experience & Visitor Copy Standards", () => {
 
   it("verifies hosted backend restriction notice and error message avoid technical jargon", () => {
     expect(BACKEND_RESTRICTION_NOTICE.title).toBe("Python Backend Notice");
-    expect(BACKEND_RESTRICTION_NOTICE.body).toContain("Backend uploads are unavailable in this public demo");
+    expect(BACKEND_RESTRICTION_NOTICE.body).toContain("Python Backend execution is available in local development");
     expect(BACKEND_RESTRICTION_NOTICE.body).toContain("Browser (Recommended)");
-    expect(BACKEND_RESTRICTION_NOTICE.error).toContain("Please select 'Browser (Recommended)'");
+    expect(BACKEND_RESTRICTION_NOTICE.error).toContain("Switch to Browser (Recommended)");
 
     const combinedRestrictionText = `${BACKEND_RESTRICTION_NOTICE.title} ${BACKEND_RESTRICTION_NOTICE.body} ${BACKEND_RESTRICTION_NOTICE.error}`.toLowerCase();
     for (const jargon of PROHIBITED_PUBLIC_JARGON) {

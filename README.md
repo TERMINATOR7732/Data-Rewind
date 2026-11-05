@@ -237,28 +237,34 @@ Follow this step-by-step path to experience the core investigation loop:
 
 ---
 
-## Hosted Portfolio Demonstration & Deployment
+## Hosted Demonstration & Local Development Architecture
 
-Data Rewind is architected for zero-operating-cost cloud demonstration (strict ₹0 budget) using free hosting infrastructure:
+Data Rewind operates with a dual architecture tailored for high performance, strict privacy, and zero operating cost:
 
-- **Live Production URL:** [https://data-rewind.vercel.app](https://data-rewind.vercel.app)
-- **Source Code Repository:** [https://github.com/TERMINATOR7732/Data-Rewind](https://github.com/TERMINATOR7732/Data-Rewind)
-- **Primary Hosting Target:** **Vercel** (Unified Single-Origin Serverless Full-Stack: Vite Frontend + Python FastAPI Serverless Functions).
-- **Alternative Hosting Target:** **Render Blueprint** (Dual-Service Free Tier: Static Site + Web Service via [`render.yaml`](file:///e:/MHT%20CET%20REGISTRATION/BE/Task/DataRewind/render.yaml)).
+### 1. Hosted Web Application (Public Demo)
+- **Live URL:** [https://data-rewind.vercel.app](https://data-rewind.vercel.app)
+- **Browser-First Architecture:** User CSV processing, schema analysis, and forensic investigations run entirely in your web browser via **DuckDB-Wasm** in client Web Workers.
+- **Client-Side Data Privacy:** User CSVs never leave the browser; zero bytes are transmitted to external servers during ad-hoc investigation.
+- **Hosted Serverless API Role:** Serves static assets, health diagnostics (`/api/v1/health`), and pre-loaded demonstration scenarios (`/api/v1/scenarios`, `/api/v1/scenarios/*/run`, `/api/v1/scenarios/*/verify`).
+- **Architectural Guardrails:** Custom server-side file uploads (`POST /api/v1/datasets/upload`) and server-side ad-hoc execution (`POST /api/v1/pipelines/execute`) are restricted with HTTP 403 (`FEATURE_RESTRICTED_IN_DEMO`) to uphold strict ₹0 operating costs and avoid unauthenticated writes to ephemeral cloud disks. The UI guides users to use the fully functional **Browser (Recommended)** engine.
+
+### 2. Local Development & Engineering Workbench
+- **Python FastAPI Backend:** Runs on loopback `127.0.0.1:8000` with direct in-process DuckDB execution, Parquet checkpoint materialization, and persistent SQLite WAL metadata catalogs under `~/.data_rewind`.
+- **CLI Orchestration:** Complete terminal workflows via `python -m data_rewind.cli` (`serve`, `diagnostics`, `smoke-test`, `benchmark`, `investigate`, `replay`, `manifest`).
+- **Dual-Engine Conformance:** Run both Browser (DuckDB-Wasm) and Python engines side-by-side to verify deterministic multi-set hashes, schema alignments, and diagnostic rules against golden fixtures.
+- **Unrestricted Local Boundaries:** Full 50 MB / 500k-row CSV ingestion, ad-hoc DAG execution, and local storage retention.
 
 ### Operational Characteristics Comparison
 
-| Dimension | Local-First Workstation (Primary) | Vercel Serverless (Recommended Hosted) | Render Blueprint (Alternative Hosted) |
-| :--- | :--- | :--- | :--- |
-| **Operating Model** | Single developer workstation (offline) | Unified single-origin serverless | Dual-service (Static Site + Web Service) |
-| **Operating Cost** | **₹0 / $0** | **₹0 / $0** (Hobby Plan) | **₹0 / $0** (Free Tier) |
-| **Workspace Storage** | Durable `~/.data_rewind` | Ephemeral `/tmp/data_rewind` (512 MB) | Ephemeral `/tmp/data_rewind` (512 MB) |
-| **Persistence Across Inactivity**| 100% durable local SQLite WAL | Ephemeral (resets per container instance) | Ephemeral (resets per container spin-down) |
-| **Cold Start Latency** | **0s** (Instant native execution) | **~1–3s** (Vercel serverless microVM) | **30–50s** (Render free container spin-up) |
-| **Processing Timeout** | 120s per step (configurable) | 60s configured function timeout | 120s HTTP request timeout |
-| **Domain / Origin Architecture** | Single loopback `127.0.0.1:8000` | **Single unified origin** (`*.vercel.app`) | Dual-origin (`*-ui` and `*-api.onrender.com`)|
-| **CORS Configuration** | Loopback only | Not required (Same-Origin) | Cross-origin headers required |
-| **Demo Capabilities** | Unrestricted (50 MB CSV, ad-hoc DAGs) | 4 Canonical Scenarios (`SCN-01` to `SCN-04`) | 4 Canonical Scenarios (`SCN-01` to `SCN-04`) |
+| Dimension | Local-First Workstation (Primary) | Hosted Vercel Deployment (Public Demo) |
+| :--- | :--- | :--- |
+| **Execution Engine** | Python 3.12 + FastAPI + DuckDB In-Process | Browser DuckDB-Wasm + Ephemeral Python Serverless |
+| **User Data Ingestion** | Local filesystem (`~/.data_rewind/raw_inputs`) | In-browser virtual memory (IndexedDB / OPFS) |
+| **Operating Cost** | **₹0 / $0** | **₹0 / $0** (Free-tier Vercel Hobby) |
+| **Data Privacy** | 100% offline, local machine | 100% in-browser, 0 server egress |
+| **Ad-Hoc CSV Processing** | Full (50 MB limit, local Parquet checkpoints) | Full in-browser (DuckDB-Wasm) |
+| **Demo Scenarios** | 4 Canonical Scenarios (`SCN-01` to `SCN-04`) | 4 Canonical Scenarios (`SCN-01` to `SCN-04`) |
+| **Restricted Operations** | None (All endpoints active) | Server-side upload & server-side execute (403 guardrail) |
 
 ### Hosted Demo Limitations & Safeguards
 To preserve strict zero-operating-cost governance and protect host resources on unauthenticated public infrastructure:
